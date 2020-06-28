@@ -9,7 +9,9 @@
 <script>
     async function testWalletV3() {
         //const tonweb = new TonWeb(new TonWeb.HttpProvider('http://127.0.0.1:4800/api/v1/jsonRPC'));
-        const tonweb = new TonWeb();
+        const tonweb = new TonWeb(new TonWeb.HttpProvider('http://45.137.190.200:4800/api/v1/jsonRPC'));
+
+        //const tonweb = new TonWeb();
         const Address = TonWeb.Address;
 
         const cell = new TonWeb.boc.Cell();
@@ -31,8 +33,8 @@
         console.assert(new Address('0:2cf55953e92efbeadab7ba725c3f93a0b23f842cbba72d7b8e6f510a70e422e3').toString(true, true, true, true) === 'kQAs9VlT6S776tq3unJcP5Ogsj-ELLunLXuOb1EKcOQi47nL', 'raw address 2');
         console.assert(new Address('0:2cf55953e92efbeadab7ba725c3f93a0b23f842cbba72d7b8e6f510a70e422e3').toString(false) === '0:2cf55953e92efbeadab7ba725c3f93a0b23f842cbba72d7b8e6f510a70e422e3', 'raw address 2');
 
-        //const a = '-1:803d8af297b8a29f86360fa4012b8cc1e9f5748003744a1d3a5bb966c6213f3d';
-        const a = 'EQDjVXa_oltdBP64Nc__p397xLCvGm2IcZ1ba7anSW0NAkeP';
+        const a = '-1:803d8af297b8a29f86360fa4012b8cc1e9f5748003744a1d3a5bb966c6213f3d';
+        //const a = 'EQDjVXa_oltdBP64Nc__p397xLCvGm2IcZ1ba7anSW0NAkeP';
 
         const address = new TonWeb.Address(a);
         console.log('Address: ', address.toString(false))
@@ -40,8 +42,8 @@
         console.log(await tonweb.getTransactions(address));
         console.log('tonweb.getBalance(' + a + ')');
         console.log(await tonweb.getBalance(address));
-        console.log('tonweb.sendBoc()');
-        console.log(await tonweb.sendBoc(new Uint8Array(0)));
+        //console.log('tonweb.sendBoc()');
+        //console.log(await tonweb.sendBoc(new Uint8Array(0)));
         console.log('tonweb.call(' + a + ')');
         console.log(await tonweb.call(address, 'seqno'));
 
@@ -49,8 +51,8 @@
         console.log(await tonweb.provider.getAddressInfo(a));
         //console.log('tonweb.provider.getExtendedAddressInfo(address)');
         //console.log(await tonweb.provider.getExtendedAddressInfo(a));
-        console.log('tonweb.provider.getWalletInfo(' + a + ')');
-        console.log(await tonweb.provider.getWalletInfo(a));
+        //console.log('tonweb.provider.getWalletInfo(' + a + ')');
+        //console.log(await tonweb.provider.getWalletInfo(a));
     }
 
     testWalletV3();

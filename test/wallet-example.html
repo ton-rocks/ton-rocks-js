@@ -10,8 +10,8 @@
     async function example() {
         const bip39 = TonWeb.utils.bip39;
         const nacl = TonWeb.utils.nacl; // use nacl library for key pairs
-        const tonweb = new TonWeb(new TonWeb.HttpProvider('http://127.0.0.1:4800/api/v1/jsonRPC'));
-
+        //const tonweb = new TonWeb(new TonWeb.HttpProvider('http://127.0.0.1:4800/api/v1/jsonRPC'));
+        const tonweb = new TonWeb(new TonWeb.HttpProvider('http://45.137.190.200:4800/api/v1/jsonRPC'));
 
         let mnemonic = bip39.generateMnemonic();
         console.log(mnemonic);
@@ -30,7 +30,6 @@
 
         let wallet = tonweb.wallet.create({publicKey: keyPair.publicKey}); // create interface to wallet smart contract (wallet v3 by default)
 
-        return;
         // OR
 
         const a = 'EQDp8fLPGAq_ZOIWj51Ik27lH4P4cONH3hLFRhfnbhxrEF3v'

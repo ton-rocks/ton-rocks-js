@@ -10,7 +10,7 @@ class HttpProvider {
      * @param host? {string}
      */
     constructor(host) {
-        this.host = host || "https://toncenter.com/api/test/v2/jsonRPC";
+        this.host = host || "http://45.137.190.200:4800/api/v1/jsonRPC";
     }
 
     /**

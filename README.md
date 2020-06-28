@@ -70,10 +70,10 @@ tonweb.sendBoc(bocBytes);
 
 ```
 
-## Usage with NEWTON
+## Usage with ROCKS
 
 ```
-const tonweb = new TonWeb(new TonWeb.HttpProvider('https://toncenter.com/api/newton_test/v2/jsonRPC'));
+const tonweb = new TonWeb(new TonWeb.HttpProvider('http://45.137.190.200:4800/api/v1/jsonRPC'));
 ```
 
 
@@ -103,6 +103,8 @@ npx webpack --mode=none
 ```
 
 ## Authors
+
+[Battlelore21](https://github.com/Battlelore21)
 
 [Emelyanenko Kirill](https://github.com/EmelyanenkoK), mail: emelyanenko.kirill@gmail.com
  
