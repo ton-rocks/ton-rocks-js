@@ -8,50 +8,99 @@
 <script src="../dist/tonweb.js"></script>
 <script>
     async function example() {
+        const bip39 = TonWeb.utils.bip39;
         const nacl = TonWeb.utils.nacl; // use nacl library for key pairs
-        const tonweb = new TonWeb();
+        const tonweb = new TonWeb(new TonWeb.HttpProvider('http://127.0.0.1:4800/api/v1/jsonRPC'));
 
-        const keyPair = nacl.sign.keyPair(); // create new random key pair
+
+        let mnemonic = bip39.generateMnemonic();
+        console.log(mnemonic);
+        console.log('validate=', bip39.validateMnemonic(mnemonic));
+        // Convert 12 word mnemonic to 32 byte seed
+        let seed = await bip39.mnemonicToSeed(mnemonic);
+        seed = seed.subarray(0, 32);
+        //seed = TonWeb.utils.hexToBytes('');
+        console.log(TonWeb.utils.bytesToHex(seed));
+        const keyPair = nacl.sign.keyPair.fromSeed(seed);
+
+        //const keyPair = nacl.sign.keyPair(); // create new random key pair
         let secretKey = keyPair.secretKey;
+        console.log('secretKey=', TonWeb.utils.bytesToHex(secretKey));
+        console.log('publicKey=', TonWeb.utils.bytesToHex(keyPair.publicKey));
 
         let wallet = tonweb.wallet.create({publicKey: keyPair.publicKey}); // create interface to wallet smart contract (wallet v3 by default)
 
+        return;
         // OR
 
-        wallet = tonweb.wallet.create({address: 'EQDjVXa_oltdBP64Nc__p397xLCvGm2IcZ1ba7anSW0NAkeP'}); // if your know only address at this moment
-        secretKey = TonWeb.utils.hexToBytes('cdd624b8c960fc419d207689dd4c3bcadca7a0df53b664f97ac06454efe90c4b1dc1391e4affae5fa96b194b97de179926d791107846d80dacf700a9db1e8f7c');
+        const a = 'EQDp8fLPGAq_ZOIWj51Ik27lH4P4cONH3hLFRhfnbhxrEF3v'
+        wallet = tonweb.wallet.create({address: a}); // if your know only address at this moment
+        secretKey = TonWeb.utils.hexToBytes('92487abf03a83d908881d77625ec5e1b78c251d7228235d0f8589d543d60dc9787d37778493859d87d66736bcdddf27a25db9fa4266c74aa2468221b1d16db3c');
 
         const address = await wallet.getAddress();
         console.log('address=', address.toString(true, true, true, false));
+        console.log('address=', address.toString(false));
+        // 0:e9f1f2cf180abf64e2168f9d48936ee51f83f870e347de12c54617e76e1c6b10
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        while (1) {
+            const balance = await tonweb.provider.getBalance(a);
+            console.log(balance);
+            if (balance > 0) {
+                break;
+            }
+            await sleep(10000);
+        }
+
+        // DEPLOY
+        const info = await tonweb.provider.getAddressInfo(a);
+        console.log('info: ', info);
+        if (info.code === '') {
+                
+            const deploy = wallet.deploy(secretKey); // deploy method
+
+            const deployQuery = await deploy.getQuery();   // get deploy query Cell
+            console.log(deployQuery);
+
+            const deployFee = await deploy.estimateFee()  // get estimate fee of deploy
+            console.log(deployFee);
+
+            const deploySended = await deploy.send() // deploy wallet contract to blockchain
+            console.log(deploySended);
+
+            while (1) {
+                const info = await tonweb.provider.getAddressInfo(a);
+                console.log('info: ', info);
+                if (info.code !== '') {
+                    break;
+                }
+                await sleep(10000);
+            }
+
+        }
+
+
+        // TRANSFER GRAMS
 
         const seqno = await wallet.methods.seqno().call(); // call get-method `seqno` of wallet smart contract
         console.log('seqno=', seqno);
 
-        // DEPLOY
-
-        const deploy = wallet.deploy(secretKey); // deploy method
-
-        const deployFee = await deploy.estimateFee()  // get estimate fee of deploy
-        console.log(deployFee);
-
-        const deploySended = await deploy.send() // deploy wallet contract to blockchain
-        console.log(deploySended);
-
-        const deployQuery = await deploy.getQuery();   // get deploy query Cell
-        console.log(deployQuery);
-
-        // TRANSFER GRAMS
-
         const transfer = wallet.methods.transfer(
             {
-                secretKey: keyPair.secretKey,
-                toAddress: 'EQDjVXa_oltdBP64Nc__p397xLCvGm2IcZ1ba7anSW0NAkeP',
-                amount: TonWeb.utils.toNano(0.01), // 0.01 Gram
+                secretKey: secretKey,
+                toAddress: '-1:0000000000000000000000000000000000000000000000000000000000000000',
+                amount: TonWeb.utils.toNano(0.1), // 0.01 Gram
                 seqno: seqno,
                 payload: 'Hello',
                 sendMode: 3,
             }
         );
+
+        const transferQuery = await transfer.getQuery(); // get transfer query Cell
+        console.log(transferQuery);
 
         const transferFee = await transfer.estimateFee();   // get estimate fee of transfer
         console.log(transferFee);
@@ -59,8 +108,20 @@
         const transferSended = await transfer.send();  // send transfer query to blockchain
         console.log(transferSended);
 
-        const transferQuery = await transfer.getQuery(); // get transfer query Cell
-        console.log(transferQuery);
+        do {
+            const seqno2 = await wallet.methods.seqno().call(); // call get-method `seqno` of wallet smart contract
+            console.log('seqno=', seqno2);
+            if (seqno2 > seqno) {
+                break;
+            }
+            await sleep(10000);
+        } while (1);
+
+        console.log('tonweb.getTransactions(' + a + ')');
+        console.log(await tonweb.getTransactions(address));
+
+        const balance2 = await tonweb.provider.getBalance(a);
+        console.log(balance2);
     }
 
     example();

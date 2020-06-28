@@ -4,7 +4,7 @@
   "description": "TonWeb - JavaScript API for TON (Telegram Open Network)",
   "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "webpack-dev-server",
     "build": "npx webpack --mode=none"
   },
   "keywords": [
@@ -32,14 +32,16 @@
   "homepage": "https://github.com/toncenter/tonweb#readme",
   "repository": "https://github.com/toncenter/tonweb",
   "dependencies": {
+    "bip39": "^3.0.2",
     "bn.js": "^5.1.1",
-    "tweetnacl": "^1.0.3",
     "ethjs-unit": "^0.1.6",
+    "tweetnacl": "^1.0.3",
     "xmlhttprequest": "^1.8.0"
   },
   "devDependencies": {
     "webpack": "^4.42.1",
-    "webpack-cli": "^3.3.11"
+    "webpack-cli": "^3.3.12",
+    "webpack-dev-server": "^3.11.0"
   },
   "browser": {
     "crypto": false,

@@ -24,7 +24,7 @@ class WalletContract extends Contract {
                     const query = await this.createTransferMessage(params.secretKey, params.toAddress, params.amount, params.seqno, params.payload, params.sendMode, !Boolean(params.secretKey));
                     const legacyQuery = {
                         address: query.address.toString(true, true, true),
-                        body: query.body.toObject(),
+                        body: bytesToBase64(await query.body.toBoc(false))
                     }
                     return {query, legacyQuery};
                 }
@@ -56,7 +56,7 @@ class WalletContract extends Contract {
                         const result = await provider.call(address.toString(false), 'seqno', []);
                         let n = null;
                         try {
-                            n = parseInt(result.stack[0][1], 16);
+                            n = parseInt(result.stack[0].number.number, 16);
                         } catch (e) {
 
                         }

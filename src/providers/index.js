@@ -42,6 +42,7 @@ class HttpProvider {
                 reject(new Error("Network Error"));
             };
             xhr.setRequestHeader("content-type", "application/json");
+            console.log('send: ' + JSON.stringify(request))
             xhr.send(JSON.stringify(request));
         });
     }
@@ -124,7 +125,7 @@ class HttpProvider {
      * @return fees object
      */
     async getEstimateFee(query) {
-        return this.send("estimateFeeSimple", query);
+        return this.send("estimateFee", query);
     };
 
     /**

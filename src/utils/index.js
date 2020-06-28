@@ -1,6 +1,7 @@
 const BN = require("bn.js");
 const nacl = require("tweetnacl");
 const ethunit = require("ethjs-unit");
+const bip39 = require("bip39");
 
 let nodeCrypto = null;
 if (typeof window === 'undefined') {
@@ -292,6 +293,7 @@ function readNBytesUIntFromArray(n, ui8array) {
 module.exports = {
     BN,
     nacl,
+    bip39,
     sha256,
     fromNano,
     toNano,
