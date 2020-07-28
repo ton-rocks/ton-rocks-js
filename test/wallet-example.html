@@ -32,11 +32,12 @@
 
         // OR
 
-        const a = 'EQDp8fLPGAq_ZOIWj51Ik27lH4P4cONH3hLFRhfnbhxrEF3v'
-        wallet = tonweb.wallet.create({address: a}); // if your know only address at this moment
-        secretKey = TonWeb.utils.hexToBytes('92487abf03a83d908881d77625ec5e1b78c251d7228235d0f8589d543d60dc9787d37778493859d87d66736bcdddf27a25db9fa4266c74aa2468221b1d16db3c');
+        //const a = 'EQDp8fLPGAq_ZOIWj51Ik27lH4P4cONH3hLFRhfnbhxrEF3v'
+        //wallet = tonweb.wallet.create({address: a}); // if your know only address at this moment
+        //secretKey = TonWeb.utils.hexToBytes('92487abf03a83d908881d77625ec5e1b78c251d7228235d0f8589d543d60dc9787d37778493859d87d66736bcdddf27a25db9fa4266c74aa2468221b1d16db3c');
 
         const address = await wallet.getAddress();
+        const a = address.toString(false);
         console.log('address=', address.toString(true, true, true, false));
         console.log('address=', address.toString(false));
         // 0:e9f1f2cf180abf64e2168f9d48936ee51f83f870e347de12c54617e76e1c6b10
