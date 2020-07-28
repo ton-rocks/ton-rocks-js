@@ -1,4 +1,4 @@
-const {crc16, hexToBytes, bytesToHex, stringToBytes, base64toString, stringToBase64} = require("./index");
+const {crc16, hexToBytes, bytesToHex, stringToBytes, base64toString, stringToBase64} = require("../utils");
 
 const bounceable_tag = 0x11;
 const non_bounceable_tag = 0x51;
@@ -139,4 +139,4 @@ class Address {
     }
 }
 
-module.exports.default = Address;
+module.exports = {Address};

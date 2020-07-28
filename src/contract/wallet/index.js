@@ -1,5 +1,5 @@
-const {Cell} = require("../../boc");
-const {Address, BN, toNano, bytesToHex, hexToBytes, nacl, stringToBytes, bytesToBase64} = require("../../utils");
+const {Address, Cell} = require("../../types");
+const {BN, toNano, bytesToHex, hexToBytes, nacl, stringToBytes, bytesToBase64} = require("../../utils");
 const {Contract} = require("../index.js");
 
 /**

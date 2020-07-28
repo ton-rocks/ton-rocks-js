@@ -1,4 +1,4 @@
-const {Cell} = require("../boc");
+const {Cell} = require("../types");
 const {Address, bytesToBase64, bytesToHex, nacl} = require("../utils");
 
 class Contract {

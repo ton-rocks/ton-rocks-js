@@ -1,11 +1,11 @@
 {
-  "name": "tonweb",
-  "version": "0.0.9",
+  "name": "tonrocks",
+  "version": "0.1.0",
   "description": "TonWeb - JavaScript API for TON (Telegram Open Network)",
   "main": "src/index.js",
   "scripts": {
-    "test": "webpack-dev-server",
-    "build": "npx webpack --mode=none"
+    "test": "webpack-dev-server --config webpack.dev.js",
+    "build": "webpack --config webpack.prod.js"
   },
   "keywords": [
     "TON",
@@ -14,6 +14,11 @@
     "API"
   ],
   "authors": [
+    {
+      "name": "Battlelore21",
+      "email": "Battlelore21@protonmail.com",
+      "url": "https://github.com/Battlelore21"
+    },
     {
       "name": "Emelyanenko Kirill",
       "email": "emelyanenko.kirill@gmail.com",
@@ -27,11 +32,12 @@
   ],
   "license": "GPL-3.0",
   "bugs": {
-    "url": "https://github.com/toncenter/tonweb/issues"
+    "url": "https://github.com/ton-rocks/tonweb/issues"
   },
-  "homepage": "https://github.com/toncenter/tonweb#readme",
-  "repository": "https://github.com/toncenter/tonweb",
+  "homepage": "https://github.com/ton-rocks/tonweb#readme",
+  "repository": "https://github.com/ton-rocks/tonweb",
   "dependencies": {
+    "madeline-ton": "https://github.com/ton-rocks/madelineTon.js",
     "bip39": "^3.0.2",
     "bn.js": "^5.1.1",
     "ethjs-unit": "^0.1.6",
@@ -41,7 +47,8 @@
   "devDependencies": {
     "webpack": "^4.42.1",
     "webpack-cli": "^3.3.12",
-    "webpack-dev-server": "^3.11.0"
+    "webpack-dev-server": "^3.11.0",
+    "webpack-merge": "^5.0.9"
   },
   "browser": {
     "crypto": false,

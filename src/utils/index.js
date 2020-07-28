@@ -8,6 +8,8 @@ if (typeof window === 'undefined') {
     nodeCrypto = require('crypto');
 }
 
+const bytesToBinString = (bytes) => bytes.reduce((str, byte) => str + byte.toString(2).padStart(8, '0'), '');
+
 /**
  * @param bytes {Uint8Array}
  * @return  {Promise<ArrayBuffer>}
@@ -308,5 +310,6 @@ module.exports = {
     base64toString,
     stringToBase64,
     compareBytes,
-    readNBytesUIntFromArray
+    readNBytesUIntFromArray,
+    bytesToBinString
 };

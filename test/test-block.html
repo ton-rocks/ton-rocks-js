@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<script src="/tonrocks.bundle.js"></script>
+<script>
+    async function test() {
+        // predefined config
+        const rocksTestnet = TonRocks.configs.RocksTestnet;
+
+        // known blocks & hosts storage
+        const storage = new TonRocks.storages.BrowserStorage(rocksTestnet.zero_state.filehashBase64());
+        storage.load();
+
+        // connect to lite-server
+        const liteClient = new TonRocks.providers.LiteClient(rocksTestnet);
+        const lastBlock = await liteClient.connect();
+        console.log('lastBlock', lastBlock);
+
+        const ton = new TonRocks(liteClient, storage);
+        const utils = TonRocks.utils;
+
+        // Block api object
+        let block = new ton.bc.Block();
+
+        // get latest block
+        let blockId = await block.getLatestId();
+        console.log('latestBlockId', blockId);
+
+        // get block shards
+        let shards = await block.getShards();
+        console.log('shards', shards);
+
+        // get existing config
+        let config34 = await block.getConfig(34);
+        console.log('config34', config34);
+
+        // get nonexisting config
+        let config80 = await block.getConfig(80);
+        console.log('config80', config80);
+
+        // get all configs
+        let configAll = await block.getConfig();
+        console.log('configAll', configAll);
+
+        // get nonexisting account state (basechain)
+        let account = await block.getAccountState('0:003d8af297b8a29f86360fa4012b8cc1e9f5748003744a1d3a5bb966c6213f3d');
+        console.log('account nonexisting basechain', account);
+
+        // get nonexisting account state (masterchain)
+        account = await block.getAccountState('-1:003d8af297b8a29f86360fa4012b8cc1e9f5748003744a1d3a5bb966c6213f3d');
+        console.log('account nonexisting basechain', account);
+
+        // get existing account state (basechain)
+        account = await block.getAccountState('0:803d8af297b8a29f86360fa4012b8cc1e9f5748003744a1d3a5bb966c6213f3d');
+        console.log('account basechain', account);
+
+        // get transactions list (basechain)
+        let transactions = await block.getTransactions(101, '0:803d8af297b8a29f86360fa4012b8cc1e9f5748003744a1d3a5bb966c6213f3d', account.last_trans_lt, account.last_trans_hash);
+        console.log('account basechain transactions', transactions);
+
+        // get existing account state (masterchain)
+        account = await block.getAccountState('-1:803d8af297b8a29f86360fa4012b8cc1e9f5748003744a1d3a5bb966c6213f3d');
+        console.log('account masterchain', account);
+
+        // get transactions list (masterchain)
+        transactions = await block.getTransactions(305, '-1:803d8af297b8a29f86360fa4012b8cc1e9f5748003744a1d3a5bb966c6213f3d', account.last_trans_lt, account.last_trans_hash);
+        console.log('account masterchain transactions', transactions);
+
+        // lookup by seqno
+        blockId = new ton.bc.BlockId({
+            workchain: -1,
+            shard: new utils.BN("8000000000000000", 16),
+            seqno: 934488
+        });
+        block = new ton.bc.Block(blockId);
+        blockId = await block.lookup();
+        console.log('lookup block by seqno', blockId);
+
+        // lookup by utime (gen_utime: 1595064795)
+        blockId = new ton.bc.BlockId({
+            workchain: -1,
+            shard: new utils.BN("8000000000000000", 16)
+        });
+        block = new ton.bc.Block(blockId);
+        blockId = await block.lookup(undefined, 1595064795);
+        console.log('lookup block by utime', blockId);
+
+        // lookup by lt (lt: 1042625000000 .. 1042625000004)
+        blockId = new ton.bc.BlockId({
+            workchain: -1,
+            shard: new utils.BN("8000000000000000", 16)
+        });
+        block = new ton.bc.Block(blockId);
+        blockId = await block.lookup(new utils.BN('1042625000003', 10));
+        console.log('lookup block by lt', blockId);
+
+        // (-1,8000000000000000,934488):E83CE8A1E65966C0EDC191F1EB3B1A1F1535C6A4774465EE263E4AFAC031580A:1B225F43F12CE5973EC74D2E1885E42CE1E4B59F520E71CD789844F18EBFFA9B
+        blockId = new ton.bc.BlockId({
+            workchain: -1,
+            shard: new utils.BN("8000000000000000", 16),
+            seqno: 934488,
+            root_hash: new Uint32Array(utils.hexToBytes('E83CE8A1E65966C0EDC191F1EB3B1A1F1535C6A4774465EE263E4AFAC031580A').buffer),
+            file_hash: new Uint32Array(utils.hexToBytes('1B225F43F12CE5973EC74D2E1885E42CE1E4B59F520E71CD789844F18EBFFA9B').buffer),
+        });
+        block = new ton.bc.Block(blockId);
+
+        // get block header
+        let blockHeader = await block.getHeader();
+        console.log('blockHeader', blockHeader);
+
+        // get full block data
+        blockData = await block.getData();
+        console.log('blockData', blockData);
+
+        // validate block
+        const blockValid = await block.validate();
+        console.log('blockValid', blockValid);
+    }
+
+    test();
+</script>
+</body>
+</html>

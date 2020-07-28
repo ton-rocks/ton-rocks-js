@@ -40,6 +40,82 @@ class BitString {
     }
 
     /**
+     * @param start {number}
+     * @param n {number}
+     * @return {Uint8Array}    [start:start+n] bits
+     */
+    getRange(start, n) {
+        let array = Uint8Array.from({length: Math.ceil(n / 8)}, () => 0);
+        let cursor = 0;
+        for (let x = start; x < start+n; x++) {
+            let b = this.get(x);
+            if (b && b > 0) {
+                array[(cursor / 8) | 0] |= 1 << (7 - (cursor % 8));
+            } else {
+                array[(cursor / 8) | 0] &= ~(1 << (7 - (cursor % 8)));
+            }
+            cursor = cursor + 1;
+        }
+        return array;
+    }
+
+    /**
+     * Read unsigned int
+     * @param start {number}
+     * @param bitLength  {number}  size of uint in bits
+     * @param number  {BN}
+     */
+    readUint(start, bitLength) {
+        if (bitLength < 1) {
+            throw "Incorrect bitLength";
+        }
+        let s = "";
+        for (let i = start; i < start+bitLength; i++) {
+            let b = this.get(i);
+            if (b && b > 0) {
+                s += '1';
+            } else {
+                s += '0';
+            }
+        }
+        return new BN(s, 2);
+    }
+
+    readUint8(start) {
+        return this.readUint(start, 8).toNumber();
+    }
+
+    readUint16(start) {
+        return this.readUint(start, 16).toNumber();
+    }
+
+    readUint32(start) {
+        return this.readUint(start, 32).toNumber();
+    }
+
+    readUint64(start) {
+        return this.readUint(start, 64);
+    }
+
+    readInt8(start) {
+        let data = this.getRange(start, 8);
+        var dataView = new DataView(data.buffer);
+        return dataView.getInt8(0);
+    }
+
+    readInt16(start) {
+        let data = this.getRange(start, 16);
+        var dataView = new DataView(data.buffer);
+        return dataView.getInt16(0, false);
+    }
+
+    readInt32(start) {
+        let data = this.getRange(start, 32);
+        var dataView = new DataView(data.buffer);
+        return dataView.getInt32(0, false);
+    }
+
+    /**
      * @private
      * @param n {number}
      */

@@ -1,0 +1,49 @@
+{
+  "liteservers": [
+    {"id":{"key":"EKxJTCygZ6EBM6zSgSmOiIGPvGN+OGa4vAzBAyV2a/U=", "@type":"pub.ed25519"}, "port":"46732", "ip":764001992, "ws": "ws://127.0.0.1:7004" }
+  ], 
+  "other": [
+    {"id":{"key":"X1MkExH11/7OZz1VOSHG3eB4d3vx8PZyMen7swp8naE=", "@type":"pub.ed25519"}, "port":"46732", "ip":860856122, "ws": "ws://127.0.0.1:7004" }
+  ],
+  "dht": {
+    "a": 3, 
+    "k": 3, 
+    "static_nodes": {
+      "nodes": [
+          {
+          "@type":"dht.node","id":
+          {
+          "@type":"pub.ed25519","key":"02y2kSrmz8AplIqMGoFrZmRpOFiTil7Z4Oa3fsrED2M="
+          },
+          "addr_list":{
+              "@type":"adnl.addressList",
+              "addrs":[{"@type":"adnl.address.udp","ip":764001992,"port":30303}],
+              "version":0,"reinit_date":0,"priority":0,"expire_at":0
+          },
+          "version":-1,"signature":"VJv0NjFhaj6Th6Oow0AQR9Aglq0tzMcMLeOxC4VsgKu48/RwAjV3OpUzDfgwgMz6z1wYyl5MRUEIJtjbN+spAA=="
+         },
+         {"@type":"dht.node","id":{"@type":"pub.ed25519","key":"YR/8w6pGkcntb9a9R7YT+c8ztGHn1ZRDp3ujCJXIgdU="},"addr_list":{"@type":"adnl.addressList","addrs":[{"@type":"adnl.address.udp","ip":860856122,"port":30303}],"version":0,"reinit_date":0,"priority":0,"expire_at":0},"version":-1,"signature":"qBT44IGQl7VDOBzzmvRRXTpUlJPVb9bATbjapbsxjBVj4kocwTYQYI5Vxm5gdD6TXn+ADjIAhLhINVPr+z0bDw=="}
+      ], 
+      "@type": "dht.nodes"
+    }, 
+    "@type": "dht.config.global"
+  }, 
+  "@type": "config.global", 
+  "validator": {
+    "zero_state": {
+      "file_hash": "TfTAyZpLw/ByN9K8TNdeSN1lKnK2A9kKkVxN48a9b9A=", 
+      "seqno": 0, 
+      "root_hash": "Y1eCsGLQnC+OUSGJPrtQ1TFhKHDbqL/fPX2JXkxagZ8=", 
+      "workchain": -1, 
+      "shard": "8000000000000000"
+    }, 
+    "@type": "validator.config.global", 
+    "init_block": {
+      "file_hash": "TfTAyZpLw/ByN9K8TNdeSN1lKnK2A9kKkVxN48a9b9A=", 
+      "seqno": 0, 
+      "root_hash": "Y1eCsGLQnC+OUSGJPrtQ1TFhKHDbqL/fPX2JXkxagZ8=", 
+      "workchain": -1, 
+      "shard": "8000000000000000"
+    }
+  }
+}
