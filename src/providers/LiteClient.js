@@ -179,6 +179,7 @@ class LiteClient {
             });
             // liteServer.partialBlockProof complete:Bool from:tonNode.blockIdExt to:tonNode.blockIdExt steps:(vector liteServer.BlockLink) = liteServer.PartialBlockProof;
         });
+        //console.log('partialBlockProof', res);
         res.from = new BlockId().fromLiteId(res.from);
         res.to = new BlockId().fromLiteId(res.to);
         for (let i = 0; i < res.steps.length; i++) {

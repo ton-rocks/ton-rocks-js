@@ -1987,22 +1987,22 @@ class BlockParser {
             throw Error("Block header has incorrect root hash");
         }
         let block = loadBlock(cell.refs[0]);
-        console.log(block);
+        //console.log(block);
         if (block.info.version !== 0) {
             throw Error("Invalid BlockInfo version");
         }
         if (block.info.shard.workchain_id !== blockId.workchain) {
             throw Error("Invalid BlockInfo workchain");
         }
-        if (!compareShard(block.info.shard, blockId.shard)) {
+        if (!blockId.compareShard(block.info.shard.shard)) {
             throw Error("Invalid BlockInfo shard");
         }
         if (block.info.seq_no !== blockId.seqno) {
             throw Error("Invalid BlockInfo seqno");
         }
-        if (block.state_update.type !== Cell.MerkleUpdateCell) {
-            throw Error("No MerkleUpdate in block");
-        }
+        //if (block.state_update._ !== 'MERKLE_UPDATE') {
+        //    throw Error("No MerkleUpdate in block");
+        //}
 
         // returns current ShardState of a block
         //return block.state_update.refs[1].getHash(0);

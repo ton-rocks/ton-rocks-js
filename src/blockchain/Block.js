@@ -1,5 +1,5 @@
 const {BitString, Cell, Address} = require("../types");
-const {BN, sha256, compareBytes, base64ToBytes, bytesToBase64, bytesToBinString} = require("../utils");
+const {BN, nacl, sha256, sha512, crc32c, compareBytes, base64ToBytes, bytesToBase64, bytesToBinString, bytesToHex, concatBytes} = require("../utils");
 const {BlockParser} = require("./BlockParser");
 const {BlockId} = require("./BlockId");
 const {Storage} = require("../providers/Storage");
@@ -190,6 +190,62 @@ class Block {
     return result;
   }
 
+  validators_crc32c(nodes, cc_seqno) {
+    const tot_size = 1 + 1 + 1 + nodes.length * (8 + 2 + 8);
+    let buff = new Uint32Array(tot_size);
+    buff[0] = 0x901660ED;   // -1877581587
+    buff[1] = cc_seqno;
+    buff[2] = nodes.length;
+    for (let i = 0; i < nodes.length; i++) {
+      const key = new Uint32Array(nodes[i].key.buffer);
+      buff.set(key, 3 + i*(8+2+8));
+      let weight8 = new Uint8Array(nodes[i].weight.toArray('le'));
+      if (weight8.length < 8) {
+          let append = new Uint8Array(8 - weight8.length);
+          weight8 = concatBytes(weight8, append);
+      }
+      const weight = new Uint32Array(weight8.buffer);
+      buff.set(weight, 3 + i*(8+2+8) + 8);
+      const addr = new Uint32Array(nodes[i].addr.buffer);
+      buff.set(addr, 3 + i*(8+2+8) + 8 + 2);
+    }
+    return (new Uint32Array(crc32c(new Uint8Array(buff.buffer)).buffer))[0];
+  }
+
+  async compute_validators_set(gen, validators, count, shuffle_mc_val) {
+    let nodes = [];
+    if (shuffle_mc_val) {
+      // shuffle mc validators from the head of the list
+      let idx = [];
+      for (let i = 0; i < count; i++)
+        idx.push(0);
+      for (let i = 0; i < count; i++) {
+        let j = (await gen.next_ranged(i + 1)).toNumber();  // number 0 .. i
+        idx[i] = idx[j];
+        idx[j] = i;
+      }
+      for (let i = 0; i < count; i++) {
+        const v = validators.get(idx[i].toString(16));
+        nodes.push({key: v.public_key.pubkey, weight: v.weight, addr: v.adnl_addr ? v.adnl_addr : new Uint8Array(32)});
+      }
+    } else {
+      // simply take needed number of validators from the head of the list
+      for (let i = 0; i < count; i++) {
+        const v = validators.get(i.toString(16));
+        nodes.push({key: v.public_key.pubkey, weight: v.weight, addr: v.adnl_addr ? v.adnl_addr : new Uint8Array(32)});
+      }
+    }
+    return nodes;
+  }
+
+  async compute_node_id_short(ed25519_pubkey) {
+    // pub.ed25519#4813b4c6 key:int256 = PublicKey;
+    let pk = new Uint8Array(36);
+    pk.set([0xc6, 0xb4, 0x13, 0x48], 0);
+    pk.set(ed25519_pubkey, 4);
+    return await sha256(pk);
+  }
+
   async validate() {
     let result = {ok:false};
     try {
@@ -197,9 +253,9 @@ class Block {
         throw Error("Block has no id");
 
       let knownBlocks = this.storage.getKnownBlocks();
-      if (!knownBlocks["0"]) {
-        this.storage.addBlock(this.zero_state);
-      }
+      //if (!knownBlocks["0"]) {
+      //  this.storage.addBlock(this.zero_state);
+      //}
 
       if (knownBlocks[this.id.seqno])
         return true;
@@ -207,7 +263,7 @@ class Block {
       let from = null;
       for (var key in knownBlocks) {
         const value = knownBlocks[key];
-        if (!from || (value.seqno < this.id.seqno && value.seqno > from.seqno)) {
+        if (!from || (Math.abs(value.seqno - this.id.seqno) < Math.abs(value.seqno - from.seqno))) {
           from = value;
         }
       }
@@ -218,13 +274,17 @@ class Block {
       // main validation cycle
       for (let i = 0; i < 10000; i++) {
 
+        //console.log('request from', from, 'to', this.id);
+
         let blockProof = await this.provider.getBlockProof(from, this.id);
+
+        //console.log('got from', blockProof.from, 'to', blockProof.to);
 
         if (!from.compare(blockProof.from))
           throw Error("Invalid response");
 
-        if (blockProof.from.workchain !== -1 || !compareShard(blockProof.from.shard, shardMasterchain) ||
-            blockProof.to.workchain !== -1 || !compareShard(blockProof.to.shard, shardMasterchain))
+        if (blockProof.from.workchain !== -1 || !this.id.compareShard(blockProof.from.shard) ||
+            blockProof.to.workchain !== -1 || !this.id.compareShard(blockProof.to.shard))
           throw Error("BlockProof must have both source and destination blocks in the masterchain");
 
         if (blockProof.steps.length < 1)
@@ -237,11 +297,11 @@ class Block {
 
           const fwd = k['_'] === 'liteServer.blockLinkForward';
 
-          if (!compareBlockIdExt(curr, k.from))
+          if (!curr.compare(k.from))
             throw Error("Invalid BlockProof chain");
 
-          if (k.from.workchain !== -1 || !compareShard(k.from.shard, shardMasterchain) ||
-              k.to.workchain !== -1 || !compareShard(k.to.shard, shardMasterchain))
+          if (k.from.workchain !== -1 || !curr.compareShard(k.from.shard) ||
+              k.to.workchain !== -1 || !curr.compareShard(k.to.shard))
             throw Error("BlockProofLink must have both source and destination blocks in the masterchain");
 
           if (k.from.seqno === k.to.seqno)
@@ -265,40 +325,138 @@ class Block {
           const proofCell = await Cell.fromBoc(proof);
           let state_hash;
           let utime;
+          let blockFrom;
+          let blockTo;
           if (k.from.seqno > 0) {
-            const block = BlockParser.checkBlockHeader(proofCell[0], k.from);
+            blockFrom = BlockParser.checkBlockHeader(proofCell[0], k.from);
             if (!fwd) {
               // current ShardState of a block
-              state_hash = block.state_update.refs[1].getHash(0);
+              state_hash = blockFrom.state_update.new_hash; //block.state_update.refs[1].getHash(0);
             }
+          } else {
+              // check zerostate
+              if (proofCell[0].type != 3 || !compareBytes(proofCell[0].refs[0].getHash(0), new Uint8Array(k.from.root_hash.buffer)))
+                throw Error("Incorrect zerostate root hash");
           }
           if (k.to.seqno > 0) {
             const destProofCell = await Cell.fromBoc(dest_proof);
-            const block = BlockParser.checkBlockHeader(destProofCell[0], k.to);
-            if (block.info.key_block !== k.to_key_block)
+            blockTo = BlockParser.checkBlockHeader(destProofCell[0], k.to);
+            if (Boolean(blockTo.info.key_block) !== k.to_key_block)
               throw Error("Incorrect is_key_block value");
 
-            utime = block.info.gen_utime;
+            utime = blockTo.info.gen_utime;
           }
           if (!fwd) {
             // check a backward link
-            const stateProofCell = await Cell.fromBoc(k.state_proof);
-            if (stateProofCell.type !== 3 || !compareBytes(state_hash, stateProofCell.refs[0].getHash(0)))
+            const stateProofCell = (await Cell.fromBoc(k.state_proof))[0];
+            if (stateProofCell.type != 3 || !compareBytes(state_hash, stateProofCell.refs[0].getHash(0)))
               throw Error("BlockProofLink contains a state proof for with incorrect root hash");
+
+            const stateProof = BlockParser.parseShardState(stateProofCell.refs[0]);
+            if (stateProof.custom.prev_blocks._ !== 'HashmapAugE')
+              throw Error('no prev blocks found');
+            if (!stateProof.custom.prev_blocks.map.has(k.to.seqno.toString(16)))
+              throw Error('no prev blocks found');
+            const prevBlock = stateProof.custom.prev_blocks.map.get(k.to.seqno.toString(16));
+
+            if (prevBlock.value.blk_ref.seq_no !== k.to.seqno)
+              throw Error('Invalid dest seqno');
+
+            if (!compareBytes(prevBlock.value.blk_ref.file_hash, new Uint8Array(k.to.file_hash.buffer)))
+              throw Error('Invalid dest file_hash');
+
+            if (!compareBytes(prevBlock.value.blk_ref.root_hash, new Uint8Array(k.to.root_hash.buffer)))
+              throw Error('Invalid dest file_hash');
 
           } else {
             // check a forward link
+            let config;
+            const gen_utime = blockTo.info.gen_utime;
+            const gen_catchain_seqno = blockTo.info.gen_catchain_seqno;
+            const gen_validator_list_hash_short = blockTo.info.gen_validator_list_hash_short;
+
+            if (k.from.seqno === 0) {
+              // zerostate
+              const stateConfig = BlockParser.parseShardState(proofCell[0].refs[0]);
+              config = stateConfig.custom.config;
+            } else {
+              // key block
+              config = blockFrom.extra.custom.config;
+            }
+
+            let validators;
+            // configs 35, 34
+            if (config.config.map.has('23')) {
+              validators = config.config.map.get('23').cur_temp_validators;
+            }
+            else {
+              validators = config.config.map.get('22').cur_validators;
+            }
+            if (!validators || validators.list.map.length === 0)
+              throw Error('Cannot extract configuration from source key block');
+
+            let catchainConfig = config.config.map.get('1c').catchain;
+            const count = Math.min(validators.main, validators.total);
+            const prng = new ValidatorSetPRNG(BlockId.shardMasterchain(), -1, gen_catchain_seqno);
+            const nodes = await this.compute_validators_set(prng, validators.list.map, count, catchainConfig.shuffle_mc_validators);
+            const validator_list_hash_short = this.validators_crc32c(nodes, gen_catchain_seqno);
+            if (validator_list_hash_short !== gen_validator_list_hash_short)
+              throw Error('Computed validator set for block is invaid');
+            if (validator_list_hash_short !== (new Uint32Array([k.signatures.validator_set_hash]))[0])
+              throw Error('Computed validator set for block is invaid');
+
+            let to_sign = new Uint8Array(68);
+            to_sign.set([0x70, 0x6e, 0x0b, 0xc5], 0);  // ton.blockId root_cell_hash:int256 file_hash:int256 = ton.BlockId;
+            to_sign.set(new Uint8Array(k.to.root_hash.buffer), 4);
+            to_sign.set(new Uint8Array(k.to.file_hash.buffer), 36);
+
+            let total_weight = new BN(0);
+            let signed_weight = new BN(0);
+            let seen = [];
+            let node_list = {};
+            for (let j = 0; j < nodes.length; j++) {
+              total_weight.iadd(nodes[j].weight);
+              const shord_id = new Uint8Array(await this.compute_node_id_short(nodes[j].key));
+              node_list[bytesToHex(shord_id)] = nodes[j];
+            }
+
+            for (let j = 0; j < k.signatures.signatures.length; j++) {
+              const signature = k.signatures.signatures[j];
+              const s = bytesToHex(new Uint8Array(signature.node_id_short.buffer));
+              if (node_list[s] === undefined)
+                throw Error('signature set contains unknown NodeIdShort');
+              if (seen[signature.signature.toString()] !== undefined)
+                throw Error('signature set contains duplicate signature');
+              seen.push(signature.signature.toString());
+              // check one signature
+              
+              //const res = verify_signature(to_sign, k.signatures.signatures[j].signature, node_list[s].key);
+              const res = nacl.sign.detached.verify(to_sign, signature.signature, node_list[s].key);
+              if (!res)
+                throw Error('signature check failed');
+
+              signed_weight.iadd(node_list[s].weight);
+              if (signed_weight.gt(total_weight)) {
+                break;
+              }
+            }
+            // final
+            signed_weight.imul(new BN(3));
+            total_weight.imul(new BN(2));
+            if (signed_weight.lte(total_weight))
+              throw Error("insufficient total signature weight");
           }
 
 
           curr = k.to;
-          //knownBlocks[curr.seqno] = curr;
-          this.storage.addBlock(curr);
+
+          if (k.to_key_block)
+            this.storage.addBlock(k.to);
         }
         
         from = blockProof.to;
 
-        if (compareBlockIdExt(from, this.id)) {
+        if (this.id.compare(from)) {
           break;
         }
       }
@@ -763,6 +921,99 @@ class Block {
     return result;
   }
 
+}
+
+/*
+void validator_set_descr::hash_to(unsigned char hash_buffer[64]) const {
+  digest::hash_str<digest::SHA512>(hash_buffer, (const void*)this, sizeof(*this));
+}
+
+td::uint64 ValidatorSetPRNG::next_ulong() {
+  if (pos < limit) {
+    return td::bswap64(hash_longs[pos++]);
+  }
+  data.hash_to(hash);
+  data.incr_seed();
+  pos = 1;
+  limit = 8;
+  return td::bswap64(hash_longs[0]);
+}
+
+td::uint64 ValidatorSetPRNG::next_ranged(td::uint64 range) {
+  td::uint64 y = next_ulong();
+  return td::uint128(range).mult(y).hi();
+}
+*/
+
+function bswap32(x) {
+  return new Uint8Array([x[3], x[2], x[1], x[0]]);
+}
+function bswap64(x) {
+  return new Uint8Array([x[7], x[6], x[5], x[4], x[3], x[2], x[1], x[0]]);
+}
+
+class ValidatorSetPRNG {
+  constructor(shard, wc, cc_seqno) {
+    this.pos = 0;
+    this.limit = 0;
+    this.hash = new Uint8Array(64);
+    /*
+      unsigned char seed[32];  // seed for validator set computation, set to zero if none
+      td::uint64 shard;
+      td::int32 workchain;
+      td::uint32 cc_seqno;
+    */
+    this.data = new Uint8Array(32+8+4+4);
+    /*
+    shard(td::bswap64(shard_id.shard))
+    workchain(td::bswap32(shard_id.workchain))
+    cc_seqno(td::bswap32(cc_seqno_)
+    */
+    //this.dataU8 = new Uint8Array(this.data);
+    //this.dataU32 = new Uint32Array(this.data);
+    //this.dataI32 = new Int32Array(this.data);
+    let shardA = shard.toArray('be', 8);
+    let workchainA = new Uint8Array((new Uint32Array([wc])).buffer);
+    let cc_seqnoA = new Uint8Array((new Uint32Array([cc_seqno])).buffer);
+    this.data.set(shardA, 32);
+    this.data.set(bswap32(workchainA), 32+8);
+    this.data.set(bswap32(cc_seqnoA), 32+8+4);
+  }
+
+  incr_seed() {
+    let seed = this.data;
+    for (let i = 31; i >= 0 && !++(seed[i]); --i) {
+    }
+  }
+
+  async next_ulong() {
+    if (this.pos < this.limit) {
+      let res = this.hash.slice(this.pos*8, this.pos*8 + 8);
+      this.pos++;
+      //console.log('hex', bytesToHex(res));
+      return new BN(res, 10, 'be');
+    }
+    //console.log('data', bytesToHex(this.data));
+    this.hash = new Uint8Array(await sha512(this.data));
+    //console.log('hash', bytesToHex(this.hash));
+    this.incr_seed();
+    this.pos = 1;
+    this.limit = 8;
+    let res = this.hash.slice(0, 8);
+    //console.log('hex', bytesToHex(res));
+    return new BN(res, 10, 'be');
+  }
+
+  async next_ranged(range) {
+    let y = await this.next_ulong();
+    //console.log('next_ulong 16', y.toString(16));
+    //console.log('next_ulong 10', y.toString(10));
+    y.imul(new BN(range));
+    y.ishrn(64);
+    //console.log('next_ranged 16', y.toString(16));
+    //console.log('next_ranged 10', y.toString(10));
+    return y;
+  }
 }
 
 module.exports = {Block};

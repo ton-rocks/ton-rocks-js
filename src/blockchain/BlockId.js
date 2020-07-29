@@ -116,7 +116,7 @@ class BlockId {
         return this.shard.cmp(a) === 0;
     }
 
-    shardMasterchain()  {
+    static shardMasterchain()  {
         return new BN("8000000000000000", 16);
     }
 }

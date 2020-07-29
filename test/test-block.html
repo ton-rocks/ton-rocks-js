@@ -14,6 +14,7 @@
         // known blocks & hosts storage
         const storage = new TonRocks.storages.BrowserStorage(rocksTestnet.zero_state.filehashBase64());
         storage.load();
+        storage.addBlock(rocksTestnet.zero_state);
 
         // connect to lite-server
         const liteClient = new TonRocks.providers.LiteClient(rocksTestnet);
@@ -29,6 +30,10 @@
         // get latest block
         let blockId = await block.getLatestId();
         console.log('latestBlockId', blockId);
+
+        // validate latest block
+        let latestBlockValid = await block.validate();
+        console.log('latestBlockValid', latestBlockValid);
 
         // get block shards
         let shards = await block.getShards();
@@ -102,9 +107,9 @@
         blockId = new ton.bc.BlockId({
             workchain: -1,
             shard: new utils.BN("8000000000000000", 16),
-            seqno: 934488,
-            root_hash: new Uint32Array(utils.hexToBytes('E83CE8A1E65966C0EDC191F1EB3B1A1F1535C6A4774465EE263E4AFAC031580A').buffer),
-            file_hash: new Uint32Array(utils.hexToBytes('1B225F43F12CE5973EC74D2E1885E42CE1E4B59F520E71CD789844F18EBFFA9B').buffer),
+            seqno: 1244886,
+            root_hash: new Uint32Array(utils.hexToBytes('4DA877BF8F458C5F7DCB2A4A0482C3197621EEBE0FD02C2CFD53A47CF8D2A4B9').buffer),
+            file_hash: new Uint32Array(utils.hexToBytes('574CBBCD4C465234E9EA6193B4FF53877B21E742B2E7B43209D331778BB8289F').buffer),
         });
         block = new ton.bc.Block(blockId);
 
@@ -116,9 +121,24 @@
         blockData = await block.getData();
         console.log('blockData', blockData);
 
+        // check backward proof
+        storage.clear();
+
+        // get latest block
+        blockId = await block.getLatestId();
+        console.log('latestBlockId', blockId);
+
+        if (!blockId.ok)
+            return;
+
+        storage.addBlock(blockId.id);
+
+        block = new ton.bc.Block(rocksTestnet.zero_state);
         // validate block
         const blockValid = await block.validate();
-        console.log('blockValid', blockValid);
+        console.log('zerostate blockValid', blockValid);
+
+
     }
 
     test();

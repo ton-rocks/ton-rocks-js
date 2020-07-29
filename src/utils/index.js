@@ -9,6 +9,7 @@ if (typeof window === 'undefined') {
 }
 
 const bytesToBinString = (bytes) => bytes.reduce((str, byte) => str + byte.toString(2).padStart(8, '0'), '');
+const bytesToString = (bytes) => bytes.reduce((str, byte) => str + byte.toString(16), '');
 
 /**
  * @param bytes {Uint8Array}
@@ -19,6 +20,18 @@ function sha256(bytes) {
         return nodeCrypto.createHash('sha256').update(bytes).digest();
     } else {
         return crypto.subtle.digest("SHA-256", bytes);
+    }
+}
+
+/**
+ * @param bytes {Uint8Array}
+ * @return  {Promise<ArrayBuffer>}
+ */
+function sha512(bytes) {
+    if (typeof window === 'undefined') {
+        return nodeCrypto.createHash('sha512').update(bytes).digest();
+    } else {
+        return crypto.subtle.digest("SHA-512", bytes);
     }
 }
 
@@ -297,6 +310,7 @@ module.exports = {
     nacl,
     bip39,
     sha256,
+    sha512,
     fromNano,
     toNano,
     bytesToHex,

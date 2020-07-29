@@ -27,6 +27,12 @@ class Storage {
         this._load();
     }
 
+    clear() {
+        this.knownBlocks = {};
+        this.knownBlocksChanged = true;
+        this.knownHosts = {};
+        this.knownHostsChanged = true;
+    }
 }
 
 class BrowserStorage extends Storage {
@@ -62,8 +68,10 @@ class BrowserStorage extends Storage {
         for (let i = 0; i < blks.length; i++) {
             if (!blks[i].length)
                 continue;
-            const blk = new BlockId().fromString(blks[i]);
-            this.knownBlocks[blk.seqno] = blk;
+            try {
+                const blk = new BlockId().fromString(blks[i]);
+                this.knownBlocks[blk.seqno] = blk;
+            } catch (e) {}
         }
     }
 }
