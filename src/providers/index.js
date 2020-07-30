@@ -87,10 +87,17 @@ class HttpProvider {
      * Use this method to get transaction history of a given address.
      * @param address   {string}
      * @param limit?    {number}
+     * @param lt?       {string} Logical time of transaction to start with, must be sent with hash
+     * @param hash?     {string} Hash of transaction to start with, must be sent with lt
+     * @param to_lt?    {string} Logical time of transaction to finish with (that way it is possible to get tx from lt to to_lt)
      * @return array of transaction object
      */
-    async getTransactions(address, limit = 20) {
-        return this.send("getTransactions", {address, limit});
+    async getTransactions(address, limit = 20, lt, hash, to_lt) {
+        let args = {address, limit};
+        if (lt !== undefined) args['lt'] = lt;
+        if (hash !== undefined) args['hash'] = hash;
+        if (to_lt !== undefined) args['to_lt'] = to_lt;
+        return this.send("getTransactions", args);
     };
 
     /**
