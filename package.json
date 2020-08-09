@@ -37,10 +37,11 @@
   "homepage": "https://github.com/ton-rocks/tonweb#readme",
   "repository": "https://github.com/ton-rocks/tonweb",
   "dependencies": {
-    "madeline-ton": "https://github.com/ton-rocks/madelineTon.js",
     "bip39": "^3.0.2",
     "bn.js": "^5.1.1",
     "ethjs-unit": "^0.1.6",
+    "madeline-ton": "https://github.com/ton-rocks/madelineTon.js",
+    "ton-client-web-js": "^0.25.1",
     "tweetnacl": "^1.0.3",
     "xmlhttprequest": "^1.8.0"
   },
@@ -48,7 +49,8 @@
     "webpack": "^4.42.1",
     "webpack-cli": "^3.3.12",
     "webpack-dev-server": "^3.11.0",
-    "webpack-merge": "^5.0.9"
+    "webpack-merge": "^5.0.9",
+    "copy-webpack-plugin": "^5.1.1"
   },
   "browser": {
     "crypto": false,

@@ -56,6 +56,12 @@ class Address {
         }
     }
 
+    static fromBytes(wc, address) {
+        let addr = bytesToHex(address);
+        while (addr.length < 64) addr = "0" + addr;
+        return new Address(wc.toString() + ':' + addr);
+    }
+
     /**
      * @param anyForm {string | Address}
      */

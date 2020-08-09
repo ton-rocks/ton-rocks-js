@@ -190,6 +190,38 @@ class Cell {
     }
 
     /**
+     * deprecated
+     * @return {number}
+     */
+    getMaxDepth() {
+        let maxDepth = 0;
+        if (this.refs.length > 0) {
+            for (let k in this.refs) {
+                const i = this.refs[k];
+                if (i.getMaxDepth() > maxDepth) {
+                    maxDepth = i.getMaxDepth();
+                }
+            }
+            maxDepth = maxDepth + 1;
+        }
+        return maxDepth;
+    }
+
+    /**
+     * deprecated
+     * @private
+     * @return {Uint8Array}
+     */
+    getMaxDepthAsArray() {
+        const maxDepth = this.getMaxDepth();
+        const d = Uint8Array.from({length: 2}, () => 0);
+        d[1] = maxDepth % 256;
+        d[0] = Math.floor(maxDepth / 256);
+        return d;
+    }
+
+    /**
+     * deprecated
      * @return {Promise<Uint8Array>}
      */
     async getRepr() {
@@ -198,14 +230,24 @@ class Cell {
         reprArray.push(this.getDataWithDescriptors());
         for (let k in this.refs) {
             const i = this.refs[k];
-            reprArray.push(i.depthToArray(i.getDepth()));
+            //if (i.depth.length > 0) {
+            //    reprArray.push(i.depthToArray(i.getDepth()));
+            //} else 
+            {
+                reprArray.push(i.getMaxDepthAsArray());
+            }
         }
         debug_log('add to hash ' + this.refs.length + ' childs');
         for (let k in this.refs) {
             const i = this.refs[k];
-            const hash = await i.hash();
-            debug_log('child hash ', bytesToHex(hash));
-            reprArray.push(hash);
+            //if (i.hashes.length > 0) {
+            //    const hash = i.getHash();
+            //    debug_log('child hash ', bytesToHex(hash));
+            //    reprArray.push(hash);
+            //} else 
+            {
+                reprArray.push(await i.hash());
+            }
         }
         let x = new Uint8Array();
         for (let k in reprArray) {
@@ -232,7 +274,7 @@ class Cell {
         switch (type) {
             case Cell.OrdinaryCell:
                 for (let k in this.refs) {
-                    this.levelMask |= k.levelMask;
+                    this.levelMask |= this.refs[k].levelMask;
                 }
             break;
 
@@ -316,7 +358,7 @@ class Cell {
         let hash_count = type == Cell.PrunnedBranchCell ? 1 : total_hash_count;
         let hash_i_offset = total_hash_count - hash_count;
 
-        debug_log("calc type " + this.type + " hash level " + this.getLevel() + " hash cnt " + total_hash_count + " bitlength " + this.bits.cursor);
+        //debug_log("calc type " + this.type + " hash level " + this.getLevel() + " hash cnt " + total_hash_count + " bitlength " + this.bits.cursor);
 
         this.hashes = [];
         this.depth = [];
@@ -344,10 +386,10 @@ class Cell {
             repr = concatBytes(repr, d1);
             repr = concatBytes(repr, d2);
 
-            debug_log("add to hash d1 " + bytesToHex(d1) + " d2 " + bytesToHex(d2));
+            //debug_log("add to hash d1 " + bytesToHex(d1) + " d2 " + bytesToHex(d2));
 
             if (hash_i == hash_i_offset) {
-                debug_log("add to hash data len", (this.bits.length + 7) >> 3);
+                //debug_log("add to hash data len", (this.bits.length + 7) >> 3);
 
                 if (level_i != 0 && type != Cell.PrunnedBranchCell)
                     throw Error("Cannot deserialize cell");
@@ -355,15 +397,15 @@ class Cell {
                 repr = concatBytes(repr, this.bits.getTopUppedArray());
 
             } else {
-                debug_log("add to hash own " + (hash_i - hash_i_offset - 1) + " hash", bytesToHex(this.hashes[hash_i - hash_i_offset - 1]));
+                //debug_log("add to hash own " + (hash_i - hash_i_offset - 1) + " hash", bytesToHex(this.hashes[hash_i - hash_i_offset - 1]));
       
                 if (level_i == 0 || type == Cell.PrunnedBranchCell)
                     throw Error("Cannot deserialize cell");
 
                 repr = concatBytes(repr, this.hashes[hash_i - hash_i_offset - 1]);
             }
-            if (type == Cell.MerkleProofCell || type == Cell.PrunnedBranchCell)
-                debug_log(" contains", bytesToHex(this.bits.getTopUppedArray()));
+            //if (type == Cell.MerkleProofCell || type == Cell.PrunnedBranchCell)
+            //    debug_log(" contains", bytesToHex(this.bits.getTopUppedArray()));
     
 
             let dest_i = hash_i - hash_i_offset;
@@ -388,41 +430,45 @@ class Cell {
             }
             this.depth[dest_i] = depth;
 
-            debug_log("add to hash " + this.refs.length + " childs");
+            //debug_log("add to hash " + this.refs.length + " childs");
             // children hash
             for (let i = 0; i < this.refs.length; i++) {
               if (type == Cell.MerkleProofCell || type == Cell.MerkleUpdateCell) {
-                debug_log("child type " + type + " lvl " + (level_i + 1) + " hash", bytesToHex(this.refs[i].getHash(level_i + 1)));
-                //hasher->feed(refs_ptr[i]->get_hash(level_i + 1).as_slice());
+                //debug_log("child type " + type + " lvl " + (level_i + 1) + " hash", bytesToHex(this.refs[i].getHash(level_i + 1)));
                 repr = concatBytes(repr, this.refs[i].getHash(level_i + 1));
               } else {
-                debug_log("child lvl " + level_i + "hash", bytesToHex(this.refs[i].getHash(level_i)));
-                //hasher->feed(refs_ptr[i]->get_hash(level_i).as_slice());
+                //debug_log("child lvl " + level_i + "hash", bytesToHex(this.refs[i].getHash(level_i)));
                 repr = concatBytes(repr, this.refs[i].getHash(level_i));
               }
             }
 
-            this.hashes[dest_i] = new Uint8Array(
-                await sha256(repr)
-            );
-            debug_log("cell type " + this.type + " dest " + dest_i + " hash", bytesToHex(this.hashes[dest_i]));
+            this.hashes[dest_i] = new Uint8Array(await sha256(repr));
+            //debug_log("cell type " + this.type + " dest " + dest_i + " hash", bytesToHex(this.hashes[dest_i]));
             
             hash_i++;
         }
-        debug_log("cell hashes", total_hash_count);
-        for (let i = 0; i < total_hash_count; i++) {
-            debug_log("- %s\n", bytesToHex(this.getHash(i)));
-        }
+        //debug_log("cell hashes", total_hash_count);
+        //for (let i = 0; i < total_hash_count; i++) {
+        //    debug_log("- %s\n", bytesToHex(this.getHash(i)));
+        //}
     }
 
 
     /**
+     * deprecated
      * @return {Promise<Uint8Array>}
      */
     async hash() {
         return new Uint8Array(
             await sha256(await this.getRepr())
         );
+    }
+
+    async finalizeTree() {
+        for (let k in this.refs) {
+            await this.refs[k].finalizeTree();
+        }
+        await this.finalize();
     }
 
     /**
@@ -480,9 +526,33 @@ class Cell {
     async toBoc(has_idx = true, hash_crc32 = true, has_cache_bits = false, flags = 0) {
         const root_cell = this;
 
-        const allcells = await root_cell.treeWalk();
-        const topologicalOrder = allcells[0];
-        const cellsIndex = allcells[1];
+        const allcells = root_cell.treeWalk();
+        const topologicalOrder = allcells[1];
+        const cellsIndex = allcells[2];
+
+        let maxIndex = topologicalOrder.length;
+        while (true) {
+            let changed = false;
+            for (let hash in cellsIndex) {
+                let cell = cellsIndex[hash];
+                let cellIndex = cell[0];
+                let childHashList = cell[2];
+                for (let child in childHashList) {
+                    if (cellsIndex[childHashList[child]][0] <= cellIndex) {
+                        cellsIndex[childHashList[child]][0] = maxIndex;
+                        maxIndex++;
+                        changed = true;
+                    }
+                }
+            }
+            if (!changed)
+                break;
+        }
+        topologicalOrder.sort((a,b) => { return cellsIndex[a[0]][0]-cellsIndex[b[0]][0]; });
+        let i = 0;
+        for (let i = 0; i < topologicalOrder.length; i++) {
+            cellsIndex[topologicalOrder[i][0]] = i;
+        }
 
         const cells_num = topologicalOrder.length;
         const s = cells_num.toString(2).length; // Minimal number of bits to represent reference (unused?)
@@ -490,9 +560,8 @@ class Cell {
         let full_size = 0;
         let sizeIndex = [];
         for (let cell_info of topologicalOrder) {
-            //TODO it should be async map or async for
+            full_size = full_size + cell_info[1].bocSerializationSize(cellsIndex, s_bytes);
             sizeIndex.push(full_size);
-            full_size = full_size + await cell_info[1].bocSerializationSize(cellsIndex, s_bytes);
         }
         const offset_bits = full_size.toString(2).length; // Minimal number of bits to offset/len (unused?)
         const offset_bytes = Math.max(Math.ceil(offset_bits / 8), 1);
@@ -514,8 +583,7 @@ class Cell {
                     serialization.writeUint(sizeIndex[index], offset_bytes * 8));
         }
         for (let cell_info of topologicalOrder) {
-            //TODO it should be async map or async for
-            const refcell_ser = await cell_info[1].serializeForBoc(cellsIndex, s_bytes);
+            const refcell_ser = cell_info[1].serializeForBoc(cellsIndex, s_bytes);
             serialization.writeBytes(refcell_ser);
         }
         let ser_arr = serialization.getTopUppedArray();
@@ -532,7 +600,7 @@ class Cell {
      * @param refSize
      * @return {Promise<Uint8Array>}
      */
-    async serializeForBoc(cellsIndex, refSize) {
+    serializeForBoc(cellsIndex, refSize) {
         const reprArray = [];
 
         reprArray.push(this.getDataWithDescriptors());
@@ -541,7 +609,7 @@ class Cell {
         }
         for (let k in this.refs) {
             const i = this.refs[k];
-            const refHash = await i.hash();
+            const refHash = i.getHash(0);
             const refIndexInt = cellsIndex[refHash];
             let refIndexHex = refIndexInt.toString(16);
             if (refIndexHex.length % 2) {
@@ -564,15 +632,15 @@ class Cell {
      * @param refSize
      * @return {Promise<number>}
      */
-    async bocSerializationSize(cellsIndex, refSize) {
-        return (await this.serializeForBoc(cellsIndex, refSize)).length;
+    bocSerializationSize(cellsIndex, refSize) {
+        return this.serializeForBoc(cellsIndex, refSize).length;
     }
 
     /**
      * @private
      * @return {[[], {}]} topologicalOrderArray and indexHashmap
      */
-    async treeWalk() {
+    treeWalk() {
         return treeWalk(this, [], {});
     }
 }
@@ -589,26 +657,29 @@ Cell.MerkleUpdateCell = 4;
  * @param indexHashmap cellHash: Uint8Array -> cellIndex: number
  * @return {[[], {}]} topologicalOrderArray and indexHashmap
  */
-async function treeWalk(cell, topologicalOrderArray, indexHashmap) {
-    const cellHash = await cell.hash();
+function treeWalk(cell, topologicalOrderArray, indexHashmap) {
+    const cellHash = cell.getHash(0);
     if (cellHash in indexHashmap) { // Duplication cell
-        return [topologicalOrderArray, indexHashmap];
+        return [cellHash, topologicalOrderArray, indexHashmap];
     }
-    indexHashmap[cellHash] = topologicalOrderArray.length;
+    const cellIndex = topologicalOrderArray.length;
     topologicalOrderArray.push([cellHash, cell]);
+    let childHashList = [];
     for (let subCell of cell.refs) {
-        const res = await treeWalk(subCell, topologicalOrderArray, indexHashmap);
-        topologicalOrderArray = res[0];
-        indexHashmap = res[1];
+        const res = treeWalk(subCell, topologicalOrderArray, indexHashmap);
+        childHashList.push(res[0]);
+        topologicalOrderArray = res[1];
+        indexHashmap = res[2];
     }
-    return [topologicalOrderArray, indexHashmap];
+    indexHashmap[cellHash] = [cellIndex, cell, childHashList];
+    return [cellHash, topologicalOrderArray, indexHashmap];
 }
 
 
 function parseBocHeader(serializedBoc) {
     // snake_case is used to match TON docs
     if (serializedBoc.length < 4 + 1)
-        throw "Not enough bytes for magic prefix";
+        throw Error("Not enough bytes for magic prefix");
     const inputData = serializedBoc; // Save copy for crc32
     const prefix = serializedBoc.slice(0, 4);
     serializedBoc = serializedBoc.slice(4);
@@ -637,7 +708,7 @@ function parseBocHeader(serializedBoc) {
     }
     serializedBoc = serializedBoc.slice(1);
     if (serializedBoc.length < 1 + 5 * size_bytes)
-        throw "Not enough bytes for encoding cells counters";
+        throw Error("Not enough bytes for encoding cells counters");
     const offset_bytes = serializedBoc[0];
     serializedBoc = serializedBoc.slice(1);
     const cells_num = readNBytesUIntFromArray(size_bytes, serializedBoc);
@@ -649,7 +720,7 @@ function parseBocHeader(serializedBoc) {
     const tot_cells_size = readNBytesUIntFromArray(offset_bytes, serializedBoc);
     serializedBoc = serializedBoc.slice(offset_bytes);
     if (serializedBoc.length < roots_num * size_bytes)
-        throw "Not enough bytes for encoding root cells hashes";
+        throw Error("Not enough bytes for encoding root cells hashes");
     let root_list = [];
     for (let c = 0; c < roots_num; c++) {
         root_list.push(readNBytesUIntFromArray(size_bytes, serializedBoc));
@@ -659,7 +730,7 @@ function parseBocHeader(serializedBoc) {
     if (has_idx) {
         index = [];
         if (serializedBoc.length < offset_bytes * cells_num)
-            throw "Not enough bytes for index encoding";
+            throw Error("Not enough bytes for index encoding");
         for (let c = 0; c < cells_num; c++) {
             index.push(readNBytesUIntFromArray(offset_bytes, serializedBoc));
             serializedBoc = serializedBoc.slice(offset_bytes);
@@ -667,19 +738,19 @@ function parseBocHeader(serializedBoc) {
     }
 
     if (serializedBoc.length < tot_cells_size)
-        throw "Not enough bytes for cells data";
+        throw Error("Not enough bytes for cells data");
     const cells_data = serializedBoc.slice(0, tot_cells_size);
     serializedBoc = serializedBoc.slice(tot_cells_size);
     if (hash_crc32) {
         if (serializedBoc.length < 4)
-            throw "Not enough bytes for crc32c hashsum";
+            throw Error("Not enough bytes for crc32c hashsum");
         const length = inputData.length;
         if (!compareBytes(crc32c(inputData.slice(0, length - 4)), serializedBoc.slice(0, 4)))
-            throw "Crc32c hashsum mismatch";
+            throw Error("Crc32c hashsum mismatch");
         serializedBoc = serializedBoc.slice(4);
     }
     if (serializedBoc.length)
-        throw "Too much bytes in BoC serialization";
+        throw Error("Too much bytes in BoC serialization");
     return {
         has_idx: has_idx, hash_crc32: hash_crc32, has_cache_bits: has_cache_bits, flags: flags, size_bytes: size_bytes,
         off_bytes: offset_bytes, cells_num: cells_num, roots_num: roots_num, absent_num: absent_num,
@@ -690,7 +761,7 @@ function parseBocHeader(serializedBoc) {
 
 function deserializeCellData(cellData, referenceIndexSize) {
     if (cellData.length < 2)
-        throw "Not enough bytes to encode cell descriptors";
+        throw Error("Not enough bytes to encode cell descriptors");
 
     const d1 = cellData[0], d2 = cellData[1];
     cellData = cellData.slice(2);
@@ -698,7 +769,7 @@ function deserializeCellData(cellData, referenceIndexSize) {
     const refNum = d1 & 7;
 
     if (refNum > 4) {
-        throw "Cannot deserialize absent cell";
+        throw Error("Cannot deserialize absent cell");
     }
 
     const dataByteSize = (d2 >> 1) + (d2 & 1);
@@ -714,7 +785,7 @@ function deserializeCellData(cellData, referenceIndexSize) {
     const depthSize = cell.hasHashes ? cell.getHashesCount() * 2 : 0;
 
     if (cellData.length < hashesSize + depthSize + dataByteSize + referenceIndexSize * refNum)
-        throw "Not enough bytes to encode cell data";
+        throw Error("Not enough bytes to encode cell data");
 
     // skip hashes & depth
     cellData = cellData.slice(hashesSize);
@@ -756,7 +827,7 @@ async function deserializeBoc(serializedBoc) {
         for (let ri = 0; ri < c.refs.length; ri++) {
             const r = c.refs[ri];
             if (r < ci) {
-                throw "Topological order is broken";
+                throw Error("Topological order is broken");
             }
             c.refs[ri] = cells_array[r];
         }

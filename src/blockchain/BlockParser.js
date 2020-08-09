@@ -13,13 +13,15 @@ const {
     loadInt32,
     loadBit,
     loadBits,
+    loadBool,
     loadUintLeq,
     loadUintLess,
     loadVarUInteger,
     loadGrams,
     loadRefIfExist,
     loadMaybe,
-    loadMaybeRef
+    loadMaybeRef,
+    loadEither
 } = require("./BlockUtils");
 
 
@@ -237,8 +239,8 @@ function loadWorkchainDescr(cell, t) {
     if (data.actual_min_split > data.min_split)
         throw Error('data.actual_min_split > data.min_split');
     data.basic = loadUint(cell, t, 1).toNumber();
-    data.active = loadBit(cell, t);
-    data.accept_msgs = loadBit(cell, t);
+    data.active = loadBool(cell, t);
+    data.accept_msgs = loadBool(cell, t);
     data.flags = loadUint(cell, t, 13).toNumber();
     if (data.flags !== 0)
         throw Error('data.flags');
@@ -553,7 +555,7 @@ function loadCatchainConfig(cell, t) {
         data.flags = loadUint(cell, t, 7).toNumber();
         if (data.flags !== 0)
             throw Error('data.flags !== 0');
-        data.shuffle_mc_validators = loadBit(cell, t);
+        data.shuffle_mc_validators = loadBool(cell, t);
         data.mc_catchain_lifetime = loadUint32(cell, t);
         data.shard_catchain_lifetime = loadUint32(cell, t);
         data.shard_validators_lifetime = loadUint32(cell, t);
@@ -606,7 +608,7 @@ function loadConsensusConfig(cell, t) {
         data.flags = loadUint(cell, t, 7).toNumber();
         if (data.flags !== 0)
             throw Error('data.flags !== 0');
-        data.new_catchain_ids = loadBit(cell, t);
+        data.new_catchain_ids = loadBool(cell, t);
         data.round_candidates = loadUint(cell, t, 8).toNumber();
         if (data.round_candidates < 1)
             throw Error('data.round_candidates < 1');
@@ -906,6 +908,27 @@ function loadAnycast(cell, t) {
 }
 
 /*
+addr_none$00 = MsgAddressExt;
+addr_extern$01 len:(## 9) external_address:(bits len) 
+             = MsgAddressExt;
+*/
+function loadMsgAddressExt(cell, t) {
+    const addr_type = loadUint(cell, t, 2).toNumber();
+    let data = {_:"MsgAddressExt"};
+    if (addr_type === 0) {
+        data.type = "none";
+        return data;
+    }
+    else if (addr_type === 1) {
+        data.type = "extern";
+        data.len = loadUint(cell, t, 9);
+        data.external_address = loadBits(cell, t, data.len);
+        return data;
+    }
+    throw Error("not a MsgAddressExt");
+}
+
+/*
 addr_std$10 anycast:(Maybe Anycast) 
    workchain_id:int8 address:bits256  = MsgAddressInt;
 addr_var$11 anycast:(Maybe Anycast) addr_len:(## 9) 
@@ -961,8 +984,8 @@ tick_tock$_ tick:Bool tock:Bool = TickTock;
 */
 function loadTickTock(cell, t) {
     let data = {_:"TickTock"};
-    data.tick = loadBit(cell, t);
-    data.tock = loadBit(cell, t);
+    data.tick = loadBool(cell, t);
+    data.tock = loadBool(cell, t);
     return data;
 }
 
@@ -1027,7 +1050,7 @@ account$1 addr:MsgAddressInt storage_stat:StorageInfo
 function loadAccount(cell, t) {
     if (cell.type === Cell.PrunnedBranchCell)
         return cell;
-    let data = {_:"Account"};
+    let data = {_:"Account", cell, hash: cell.getHash(0)};
     const exist = loadBit(cell, t);
     if (!exist) {
         data.type = 'none';
@@ -1148,9 +1171,9 @@ tr_phase_action$_ success:Bool valid:Bool no_funds:Bool
 */
 function loadTrActionPhase(cell, t) {
     let data = {_:"TrActionPhase"};
-    data.success = loadBit(cell, t);
-    data.valid = loadBit(cell, t);
-    data.no_funds = loadBit(cell, t);
+    data.success = loadBool(cell, t);
+    data.valid = loadBool(cell, t);
+    data.no_funds = loadBool(cell, t);
     data.status_change = loadAccStatusChange(cell, t);
     data.total_fwd_fees = loadMaybe(cell, t, loadGrams);
     data.total_action_fees = loadMaybe(cell, t, loadGrams);
@@ -1243,9 +1266,9 @@ function loadTrComputePhase(cell, t) {
     else {
         // tr_phase_compute_vm
         data.type = "vm";
-        data.success = loadBit(cell, t);
-        data.msg_state_used = loadBit(cell, t);
-        data.account_activated = loadBit(cell, t);
+        data.success = loadBool(cell, t);
+        data.msg_state_used = loadBool(cell, t);
+        data.account_activated = loadBool(cell, t);
         data.gas_fees = loadGrams(cell, t);
 
         let cell_r1 = cell.refs[t.ref++];
@@ -1289,14 +1312,14 @@ function loadTransactionDescr(cell, t) {
         if (type2 === 0) {
             // trans_ord
             data.type = "ord";
-            data.credit_first = loadBit(cell, t);
+            data.credit_first = loadBool(cell, t);
             data.storage_ph = loadMaybe(cell, t, loadTrStoragePhase);
             data.credit_ph = loadMaybe(cell, t, loadTrCreditPhase);
             data.compute_ph = loadTrComputePhase(cell, t);
             data.action = loadMaybeRef(cell, t, loadTrActionPhase);
-            data.aborted = loadBit(cell, t);
+            data.aborted = loadBool(cell, t);
             data.bounce = loadMaybe(cell, t, loadTrBouncePhase);
-            data.destroyed = loadBit(cell, t);
+            data.destroyed = loadBool(cell, t);
             return data;
         }
         else {
@@ -1309,12 +1332,12 @@ function loadTransactionDescr(cell, t) {
     else if (type === 1) {
         //trans_tick_tock
         data.type = "tick_tock";
-        data.is_tock = loadBit(cell, t);
+        data.is_tock = loadBool(cell, t);
         data.storage_ph = loadTrStoragePhase(cell, t);
         data.compute_ph = loadTrComputePhase(cell, t);
         data.action = loadMaybeRef(cell, t, loadTrActionPhase);
-        data.aborted = loadBit(cell, t);
-        data.destroyed = loadBit(cell, t);
+        data.aborted = loadBool(cell, t);
+        data.destroyed = loadBool(cell, t);
         return data;
     }
     throw Error("not a TransactionDescr");
@@ -1336,8 +1359,91 @@ function loadAccountStatus(cell, t) {
     }
 }
 
+/*
+int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool
+  src:MsgAddressInt dest:MsgAddressInt 
+  value:CurrencyCollection ihr_fee:Grams fwd_fee:Grams
+  created_lt:uint64 created_at:uint32 = CommonMsgInfo;
+ext_in_msg_info$10 src:MsgAddressExt dest:MsgAddressInt 
+  import_fee:Grams = CommonMsgInfo;
+ext_out_msg_info$11 src:MsgAddressInt dest:MsgAddressExt
+  created_lt:uint64 created_at:uint32 = CommonMsgInfo;
+*/
+function loadCommonMsgInfo(cell, t) {
+    let data = {_:"CommonMsgInfo"};
+    let b = loadBit(cell, t);
+    if (b === 0) {
+        data.type = 'int';
+        data.ihr_disabled = loadBool(cell, t);
+        data.bounce = loadBool(cell, t);
+        data.bounced = loadBool(cell, t);
+        data.src = loadMsgAddressInt(cell, t);
+        data.dest = loadMsgAddressInt(cell, t);
+        data.value = loadCurrencyCollection(cell, t);
+        data.ihr_fee = loadGrams(cell, t);
+        data.fwd_fee = loadGrams(cell, t);
+        data.created_lt = loadUint64(cell, t);
+        data.created_at = loadUint32(cell, t);
+        return data;
+    }
+    else {
+        b = loadBit(cell, t);
+        if (b === 0) {
+            data.type = 'ext_in';
+            data.src = loadMsgAddressExt(cell, t);
+            data.dest = loadMsgAddressInt(cell, t);
+            data.import_fee = loadGrams(cell, t);
+            return data;
+        }
+        else {
+            data.type = 'ext_out';
+            data.src = loadMsgAddressInt(cell, t);
+            data.dest = loadMsgAddressExt(cell, t);
+            data.created_lt = loadUint64(cell, t);
+            data.created_at = loadUint32(cell, t);
+            return data;
+        }
+    }
+    throw Error('not a CommonMsgInfo');
+}
+
+function loadAny(cell, t) {
+    let data = {_:"Any"};
+    data.cell = cell;
+    data.current_pos = t.cs;
+    data.current_ref = t.ref;
+    return data;
+}
+
+
+function loadSignature(any) {
+    if (any._ !== 'Any')
+        throw Error('not an any');
+
+    let t = {cs: any.current_pos, ref: any.current_ref};
+
+    let exist = loadBit(any.cell, t);
+    if (!exist)
+        throw Error('no signature');
+
+    let signature = loadBits(any.cell, t, 512);
+    return signature;
+}
+
+
+/*
+message$_ {X:Type} info:CommonMsgInfo
+  init:(Maybe (Either StateInit ^StateInit))
+  body:(Either X ^X) = Message X;
+*/
 function loadMessage(cell, t) {
-    let data = {_:"Message"};  // TODO
+    let data = {_:"Message", cell, hash: cell.getHash(0)};
+    data.info = loadCommonMsgInfo(cell, t);
+    data.init = loadMaybe(cell, t,
+        (c,p) => loadEither(c,p,
+            (c2,p2) => loadStateInit(c2, p2), (c3,p3) => loadRefIfExist(c3, p3, (c4,p4) => loadStateInit(c4, p4))));
+    data.body = loadEither(cell, t,
+        (c,p) => loadAny(c,p), (c2,p2) => loadRefIfExist(c2,p2, (c3,p3) => loadAny(c3,p3)));
     return data;
 }
 
@@ -1354,7 +1460,7 @@ function loadTransaction(cell, t) {
     if (loadUint(cell, t, 4).toNumber() !== 7) {
         throw Error("not a Transaction");
     }
-    let data = {_:"Transaction"};
+    let data = {_:"Transaction", cell, hash: cell.getHash(0)};
     data.account_addr = loadBits(cell, t, 256);
     data.lt = loadUint64(cell, t);
     data.prev_trans_hash = loadBits(cell, t, 256);
@@ -1427,7 +1533,7 @@ function loadValidatorInfo(cell, t) {
     let data = {_:"ValidatorInfo"};
     data.validator_list_hash_short = loadUint32(cell, t);
     data.catchain_seqno = loadUint32(cell, t);
-    data.nx_cc_updated = loadBit(cell, t);
+    data.nx_cc_updated = loadBool(cell, t);
     return data;
 }
 
@@ -1436,7 +1542,7 @@ _ key:Bool blk_ref:ExtBlkRef = KeyExtBlkRef;
 */
 function loadKeyExtBlkRef(cell, t) {
     let data = {_:"KeyExtBlkRef"};
-    data.key = loadBit(cell, t);
+    data.key = loadBool(cell, t);
     data.blk_ref = loadExtBlkRef(cell, t);
     return data;
 }
@@ -1446,7 +1552,7 @@ _ key:Bool max_end_lt:uint64 = KeyMaxLt;
 */
 function loadKeyMaxLt(cell, t) {
     let data = {_:"KeyExtKeyMaxLtBlkRef"};
-    data.key = loadBit(cell, t);
+    data.key = loadBool(cell, t);
     data.max_end_lt = loadUint64(cell, t);
     return data;
 }
@@ -1488,14 +1594,14 @@ block_create_stats#17 counters:(HashmapE 256 CreatorStats) = BlockCreateStats;
 block_create_stats_ext#34 counters:(HashmapAugE 256 CreatorStats uint32) = BlockCreateStats;
 */
 function loadBlockCreateStats(cell, t) {
-    let data = {_:"BlockCreateStats"};  // TODO
+    let data = {_:"BlockCreateStats"};
     let type = loadUint8(cell, t);
     if (type === 0x17) {
-        data.type = 'stats';
+        data.type = '';
         data.counters = loadHashmapE(cell, t, 256, loadCreatorStats);
     }
     else if (type === 0x34) {
-        data.type = 'stats_ext';
+        data.type = 'ext';
         data.counters = loadHashmapAugE(cell, t, 256, loadCreatorStats, loadUint32);
     }
     return data;
@@ -1530,7 +1636,7 @@ function loadMcStateExtra(cell, t) {
             throw Error("data.flags > 1");
         data.validator_info = loadValidatorInfo(cell_r1, tr1);
         data.prev_blocks = loadOldMcBlocksInfo(cell_r1, tr1);
-        data.after_key_block = loadBit(cell_r1, tr1);
+        data.after_key_block = loadBool(cell_r1, tr1);
         data.last_key_block = loadMaybe(cell_r1, tr1, loadExtBlkRef);
         if (data.flags & 1)
             data.block_create_stats = loadBlockCreateStats(cell_r1, tr1);
@@ -1652,9 +1758,9 @@ function loadBlockInfo(cell) {
     data.after_merge = loadBit(cell, t);
     data.before_split = loadBit(cell, t);
     data.after_split = loadBit(cell, t);
-    data.want_split = loadBit(cell, t);
-    data.want_merge = loadBit(cell, t);
-    data.key_block = loadBit(cell, t);
+    data.want_split = loadBool(cell, t);
+    data.want_merge = loadBool(cell, t);
+    data.key_block = loadBool(cell, t);
     data.vert_seqno_incr = loadBit(cell, t);
     data.flags = loadUint8(cell, t);
     if (data.flags > 1)
@@ -1753,11 +1859,11 @@ function loadShardDescr(cell, t) {
     data.end_lt = loadUint64(cell, t);
     data.root_hash = loadBits(cell, t, 256);
     data.file_hash = loadBits(cell, t, 256);
-    data.before_split = loadBit(cell, t);
-    data.before_merge = loadBit(cell, t);
-    data.want_split = loadBit(cell, t);
-    data.want_merge = loadBit(cell, t);
-    data.nx_cc_updated = loadBit(cell, t);
+    data.before_split = loadBool(cell, t);
+    data.before_merge = loadBool(cell, t);
+    data.want_split = loadBool(cell, t);
+    data.want_merge = loadBool(cell, t);
+    data.nx_cc_updated = loadBool(cell, t);
     data.flags = loadUint(cell, t, 3).toNumber();
     if (data.flags !== 0)
         throw Error("ShardDescr data.flags !== 0");
@@ -1977,6 +2083,14 @@ class BlockParser {
 
     static parseTransaction(cell) {
         return loadTransaction(cell, {cs:0, ref:0});
+    }
+
+    static parseMessage(cell) {
+        return loadMessage(cell, {cs:0, ref:0});
+    }
+
+    static parseSignature(any) {
+        return loadSignature(any);
     }
 
     static checkBlockHeader(cell, blockId) {

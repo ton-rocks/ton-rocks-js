@@ -55,18 +55,17 @@ class LiteClient {
     }
 
     updateSyncInfo(masterchainInfoEx) {
-        console.log('server time', masterchainInfoEx.now);
+        //console.log('server time', masterchainInfoEx.now);
         const client_tm = Math.ceil(new Date().getTime() / 1000);
-        console.log('client time', client_tm);
+        //console.log('client time', client_tm);
 
         this.clientDiff = masterchainInfoEx.now - client_tm;
         this.serverDiff = masterchainInfoEx.last_utime - masterchainInfoEx.now;
         this.tonDiff = masterchainInfoEx.last_utime - client_tm;
 
-        console.log('client-server TIME_DIFF', this.clientDiff);
-        console.log('server TIME_DIFF', this.serverDiff);
-        console.log('client TIME_DIFF', this.tonDiff);
-
+        //console.log('client-server TIME_DIFF', this.clientDiff);
+        //console.log('server TIME_DIFF', this.serverDiff);
+        //console.log('client TIME_DIFF', this.tonDiff);
     }
 
     async checkServer() {
@@ -122,9 +121,14 @@ class LiteClient {
 
         this.updateSyncInfo(masterchainInfoEx);
 
-        const blockId = new BlockId().fromLiteId(masterchainInfoEx.last);
+        const res = {
+            blockId: new BlockId().fromLiteId(masterchainInfoEx.last),
+            clientDiff: this.clientDiff,
+            serverDiff: this.serverDiff,
+            tonDiff: this.tonDiff
+        }
 
-        return blockId;
+        return res;
     }
 
 
@@ -204,7 +208,7 @@ class LiteClient {
     }
 
     async sendMessage(body) {
-        let res = await this.request(3, 'liteServer.SendMsgStatus', async () => {
+        let res = await this.request(3, 'liteServer.sendMsgStatus', async () => {
             // liteServer.sendMessage body:bytes = liteServer.SendMsgStatus;
             return await this.liteclient.methodCall('liteServer.sendMessage', {
                 body
@@ -215,9 +219,10 @@ class LiteClient {
     }
 
     async runSmcMethod(blockId, accountAddr, method_id, params) {
-        let res = await this.request(3, 'liteServer.RunMethodResult', async () => {
+        let res = await this.request(3, 'liteServer.runMethodResult', async () => {
             // liteServer.runSmcMethod mode:# id:tonNode.blockIdExt account:liteServer.accountId method_id:long params:bytes = liteServer.RunMethodResult;
             return await this.liteclient.methodCall('liteServer.runSmcMethod', {
+                mode: 0x1F,
                 id: blockId.toLiteId(),
                 account: new Address(accountAddr).toString(true, true, true, false),
                 method_id: blockId.longFromBN(method_id),
@@ -251,7 +256,7 @@ class LiteClient {
             });
             // liteServer.transactionList ids:(vector tonNode.blockIdExt) transactions:bytes = liteServer.TransactionList;
         });
-        for (let i = 0; i > res.ids.length; i++) {
+        for (let i = 0; i < res.ids.length; i++) {
             res.ids[i] = new BlockId().fromLiteId(res.ids[i]);
         }
         return res;

@@ -54,6 +54,12 @@ function loadBits(cell, t, n) {
     return bits;
 }
 
+function loadBool(cell, t) {
+    if (t.cs + 1 > cell.bits.cursor)
+        throw Error("cannot load Bool");
+    return cell.bits.get(t.cs++) ? true : false;
+}
+
 function loadUintLeq(cell, t, n) {
     let last_one = -1;
     let l = 1;
@@ -144,6 +150,20 @@ function loadMaybeRef(cell, t, f, f2) {
         return c;
 }
 
+/*
+left$0 {X:Type} {Y:Type} value:X = Either X Y;
+right$1 {X:Type} {Y:Type} value:Y = Either X Y;
+*/
+function loadEither(cell, t, fx, fy) {
+    const b = loadBit(cell, t);
+    if (b === 0) {
+        return fx(cell, t);
+    }
+    else {
+        return fy(cell, t);
+    }
+}
+
 module.exports = {
     loadUint,
     loadUint8,
@@ -155,11 +175,13 @@ module.exports = {
     loadInt32,
     loadBit,
     loadBits,
+    loadBool,
     loadUintLeq,
     loadUintLess,
     loadVarUInteger,
     loadGrams,
     loadRefIfExist,
     loadMaybe,
-    loadMaybeRef
+    loadMaybeRef,
+    loadEither
 }

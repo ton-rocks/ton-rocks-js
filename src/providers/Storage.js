@@ -1,4 +1,5 @@
 const {BlockId} = require("../blockchain/BlockId");
+const {crc16, bytesToHex} = require("../utils");
 
 
 class Storage {
@@ -47,7 +48,8 @@ class BrowserStorage extends Storage {
             for (let i in this.knownBlocks) {
                 s += this.knownBlocks[i].toString() + ';';
             }
-            localStorage.setItem(k, s);
+            let crc = bytesToHex(crc16(s));
+            localStorage.setItem(k, crc + '|' + s);
             this.knownBlocksChanged = false;
         }
         if (this.knownHostsChanged) {
@@ -64,7 +66,15 @@ class BrowserStorage extends Storage {
         let blks = localStorage.getItem(k);
         if (!blks)
             return;
-        blks = blks.split(';');
+        let init = blks.split('|');
+        if (init.length !== 2)
+            return;
+        let crc = bytesToHex(crc16(init[1]));
+        if (crc !== init[0]) {
+            console.warn('invalid hash in storage');
+            return;
+        }
+        blks = init[1].split(';');
         for (let i = 0; i < blks.length; i++) {
             if (!blks[i].length)
                 continue;

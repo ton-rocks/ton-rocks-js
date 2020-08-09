@@ -9,7 +9,14 @@ if (typeof window === 'undefined') {
 }
 
 const bytesToBinString = (bytes) => bytes.reduce((str, byte) => str + byte.toString(2).padStart(8, '0'), '');
-const bytesToString = (bytes) => bytes.reduce((str, byte) => str + byte.toString(16), '');
+
+function stringToArray(str) {
+    let buf = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+        buf[i] = str.charCodeAt(i);
+    }
+    return buf;
+}
 
 /**
  * @param bytes {Uint8Array}
@@ -325,5 +332,6 @@ module.exports = {
     stringToBase64,
     compareBytes,
     readNBytesUIntFromArray,
-    bytesToBinString
+    bytesToBinString,
+    stringToArray
 };

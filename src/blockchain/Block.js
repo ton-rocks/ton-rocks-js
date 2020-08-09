@@ -1,5 +1,5 @@
 const {BitString, Cell, Address} = require("../types");
-const {BN, nacl, sha256, sha512, crc32c, compareBytes, base64ToBytes, bytesToBase64, bytesToBinString, bytesToHex, concatBytes} = require("../utils");
+const {BN, nacl, sha256, sha512, crc16, crc32c, compareBytes, base64ToBytes, bytesToBase64, bytesToBinString, bytesToHex, concatBytes, stringToArray} = require("../utils");
 const {BlockParser} = require("./BlockParser");
 const {BlockId} = require("./BlockId");
 const {Storage} = require("../providers/Storage");
@@ -10,22 +10,6 @@ class Block {
     this.provider = provider || this._provider;
     this.storage = storage || this._storage;
     this.zero_state = new BlockId(this.provider.getZeroState());
-    this.id = undefined;
-    if (id !== undefined)
-      this.setId(id);
-    else
-      this.invalidate();
-  }
-
-  invalidate() {
-    this.validated = false;
-  }
-
-  setId(id) {
-    if (this.id && this.id.compare(id))
-      return;
-    this.id = id;
-    this.invalidate();
   }
 
   async getLatestId() {
@@ -35,10 +19,11 @@ class Block {
       if (!res)
         throw Error("empty answer");
 
-      this.setId(res);
-
       result.ok = true;
-      result.id = this.id;
+      result.id = res.blockId;
+      result.clientDiff = res.clientDiff;
+      result.serverDiff = res.serverDiff;
+      result.tonDiff = res.tonDiff;
 
       return result;
     } catch(e) {
@@ -48,13 +33,13 @@ class Block {
     return result;
   }
 
-  async lookup(lt, utime) {
+  async lookup(blockId, lt, utime) {
     let result = {ok:false};
     try {
-      if (!this.id)
+      if (!blockId)
         throw Error("Block has no id");
 
-      let res = await this.provider.lookupBlock(this.id, lt, utime);
+      let res = await this.provider.lookupBlock(blockId, lt, utime);
       if (!res)
         throw Error("empty answer");
 
@@ -71,13 +56,13 @@ class Block {
       const blockHeader = BlockParser.parseBlock(blockProofCell[0].refs[0]);
 
       // check other
-      if (!(lt || utime) && blockHeader.info.seq_no !== this.id.seqno)
+      if (!(lt || utime) && blockHeader.info.seq_no !== blockId.seqno)
         throw Error("Invalid seqno");
-      if (!this.id.compareShard(blockHeader.info.shard.shard))
+      if (!blockId.compareShard(blockHeader.info.shard.shard))
         throw Error("Invalid shard");
-      if (blockHeader.info.shard.workchain_id !== this.id.workchain)
+      if (blockHeader.info.shard.workchain_id !== blockId.workchain)
         throw Error("Invalid workchain");
-      if (blockHeader.info.not_master != (this.id.workchain !== -1))
+      if (blockHeader.info.not_master != (blockId.workchain !== -1))
         throw Error("Invalid not_master");
       if (utime && blockHeader.info.gen_utime !== utime)
         throw Error("Invalid utime");
@@ -85,8 +70,6 @@ class Block {
         throw Error("Invalid lt");
 
       // save
-      this.setId(res.id);
-
       result.ok = true;
       result.id = res.id;
       result.blockHeader = blockHeader;
@@ -99,13 +82,13 @@ class Block {
     return result;
   }
 
-  async getHeader() {
+  async getHeader(blockId) {
     let result = {ok:false};
     try {
-      if (!this.id)
+      if (!blockId)
         throw Error("Block has no id");
 
-      let res = await this.provider.getBlockHeader(this.id);
+      let res = await this.provider.getBlockHeader(blockId);
       if (!res)
         throw Error("empty answer");
 
@@ -116,19 +99,19 @@ class Block {
 
       // check root_hash
       if (blockProofCell[0].type !== Cell.MerkleProofCell ||
-          !compareBytes(new Uint8Array(this.id.root_hash.buffer), blockProofCell[0].refs[0].getHash(0)))
+          !compareBytes(new Uint8Array(blockId.root_hash.buffer), blockProofCell[0].refs[0].getHash(0)))
         throw Error("Invalid root_hash");
 
       const blockHeader = BlockParser.parseBlock(blockProofCell[0].refs[0]);
 
       // check other
-      if (blockHeader.info.seq_no !== this.id.seqno)
+      if (blockHeader.info.seq_no !== blockId.seqno)
         throw Error("Invalid seqno");
-      if (!this.id.compareShard(blockHeader.info.shard.shard))
+      if (!blockId.compareShard(blockHeader.info.shard.shard))
         throw Error("Invalid shard");
-      if (blockHeader.info.shard.workchain_id !== this.id.workchain)
+      if (blockHeader.info.shard.workchain_id !== blockId.workchain)
         throw Error("Invalid workchain");
-      if (blockHeader.info.not_master != (this.id.workchain !== -1))
+      if (blockHeader.info.not_master != (blockId.workchain !== -1))
         throw Error("Invalid not_master");
 
       result.ok = true;
@@ -143,19 +126,19 @@ class Block {
   }
 
 
-  async getData() {
+  async getData(blockId) {
     let result = {ok:false};
     try {
-      if (!this.id)
+      if (!blockId)
         throw Error("Block has no id");
 
-      let res = await this.provider.getBlock(this.id);
+      let res = await this.provider.getBlock(blockId);
       if (!res)
         throw Error("Cannot get block data");
 
       // check file_hash
       const hash = await sha256(res.data);
-      if (!compareBytes(new Uint8Array(this.id.file_hash.buffer), new Uint8Array(hash)))
+      if (!compareBytes(new Uint8Array(blockId.file_hash.buffer), new Uint8Array(hash)))
         throw Error("Invalid file_hash");
 
       const blockCell = await Cell.fromBoc(res.data);
@@ -164,19 +147,19 @@ class Block {
         throw Error("Invalid root");
 
       // check root_hash
-      if (!compareBytes(new Uint8Array(this.id.root_hash.buffer), blockCell[0].getHash(0)))
+      if (!compareBytes(new Uint8Array(blockId.root_hash.buffer), blockCell[0].getHash(0)))
         throw Error("Invalid root_hash");
 
       const block = BlockParser.parseBlock(blockCell[0]);
 
       // check other
-      if (block.info.seq_no !== this.id.seqno)
+      if (block.info.seq_no !== blockId.seqno)
         throw Error("Invalid seqno");
-      if (!this.id.compareShard(block.info.shard.shard))
+      if (!blockId.compareShard(block.info.shard.shard))
         throw Error("Invalid shard");
-      if (block.info.shard.workchain_id !== this.id.workchain)
+      if (block.info.shard.workchain_id !== blockId.workchain)
         throw Error("Invalid workchain");
-      if (block.info.not_master != (this.id.workchain !== -1))
+      if (block.info.not_master != (blockId.workchain !== -1))
         throw Error("Invalid not_master");
 
       result.ok = true;
@@ -246,10 +229,10 @@ class Block {
     return await sha256(pk);
   }
 
-  async validate() {
+  async validate(blockId) {
     let result = {ok:false};
     try {
-      if (!this.id)
+      if (!blockId)
         throw Error("Block has no id");
 
       let knownBlocks = this.storage.getKnownBlocks();
@@ -257,13 +240,16 @@ class Block {
       //  this.storage.addBlock(this.zero_state);
       //}
 
-      if (knownBlocks[this.id.seqno])
-        return true;
+      if (knownBlocks[blockId.seqno]) {
+        result.ok = true;
+        result.valid = true;
+        return result;
+      }
 
       let from = null;
       for (var key in knownBlocks) {
         const value = knownBlocks[key];
-        if (!from || (Math.abs(value.seqno - this.id.seqno) < Math.abs(value.seqno - from.seqno))) {
+        if (!from || (Math.abs(value.seqno - blockId.seqno) < Math.abs(value.seqno - from.seqno))) {
           from = value;
         }
       }
@@ -274,17 +260,17 @@ class Block {
       // main validation cycle
       for (let i = 0; i < 10000; i++) {
 
-        //console.log('request from', from, 'to', this.id);
+        //console.log('request from', from, 'to', blockId);
 
-        let blockProof = await this.provider.getBlockProof(from, this.id);
+        let blockProof = await this.provider.getBlockProof(from, blockId);
 
         //console.log('got from', blockProof.from, 'to', blockProof.to);
 
         if (!from.compare(blockProof.from))
           throw Error("Invalid response");
 
-        if (blockProof.from.workchain !== -1 || !this.id.compareShard(blockProof.from.shard) ||
-            blockProof.to.workchain !== -1 || !this.id.compareShard(blockProof.to.shard))
+        if (blockProof.from.workchain !== -1 || !blockId.compareShard(blockProof.from.shard) ||
+            blockProof.to.workchain !== -1 || !blockId.compareShard(blockProof.to.shard))
           throw Error("BlockProof must have both source and destination blocks in the masterchain");
 
         if (blockProof.steps.length < 1)
@@ -456,32 +442,31 @@ class Block {
         
         from = blockProof.to;
 
-        if (this.id.compare(from)) {
+        if (blockId.compare(from)) {
           break;
         }
       }
 
-      this.storage.save();
-      return true;
+      result.ok = true;
+      result.valid = true;
 
     } catch(e) {
       result.reason = e;
       console.log(e);
-      this.storage.save();
-      return false;
     }
+    this.storage.save();
     return result;
   }
 
-  async getShards() {
+  async getShards(blockId) {
     let result = {ok:false};
     try {
-      if (!this.id)
+      if (!blockId)
         throw Error("Block has no id");
-      if (this.id.workchain !== -1)
+      if (blockId.workchain !== -1)
         throw Error("Block is not a masterchain");
 
-      let res = await this.provider.getAllShardsInfo(this.id);
+      let res = await this.provider.getAllShardsInfo(blockId);
       if (!res)
         throw Error("empty answer");
 
@@ -498,19 +483,19 @@ class Block {
 
       // check root_hash
       if (blockProofCell[0].type !== Cell.MerkleProofCell ||
-          !compareBytes(new Uint8Array(this.id.root_hash.buffer), blockProofCell[0].refs[0].getHash(0)))
+          !compareBytes(new Uint8Array(blockId.root_hash.buffer), blockProofCell[0].refs[0].getHash(0)))
         throw Error("Invalid root_hash");
 
       const blockHeader = BlockParser.parseBlock(blockProofCell[0].refs[0]);
 
       // check other
-      if (blockHeader.info.seq_no !== this.id.seqno)
+      if (blockHeader.info.seq_no !== blockId.seqno)
         throw Error("Invalid seqno");
-      if (!this.id.compareShard(blockHeader.info.shard.shard))
+      if (!blockId.compareShard(blockHeader.info.shard.shard))
         throw Error("Invalid shard");
-      if (blockHeader.info.shard.workchain_id !== this.id.workchain)
+      if (blockHeader.info.shard.workchain_id !== blockId.workchain)
         throw Error("Invalid workchain");
-      if (blockHeader.info.not_master != (this.id.workchain !== -1))
+      if (blockHeader.info.not_master != (blockId.workchain !== -1))
         throw Error("Invalid not_master");
 
       // extract MC ShardState hash
@@ -542,11 +527,11 @@ class Block {
     return result;
   }
 
-  async getTransactions(maxCount, accountAddr, lt, hash) {
+  async getTransactions(maxCount, accountAddr, lt, hash, to_lt) {
     let result = {ok:false};
     try {
-      if (!this.id)
-        throw Error("Block has no id");
+      if (to_lt !== undefined && lt.lte(to_lt))
+        throw Error('lt must be > than to_lt');
 
       const address = new Address(accountAddr);
 
@@ -557,6 +542,7 @@ class Block {
 
       let requests = Math.ceil(maxCount/10);
       let pending = maxCount;
+      let to_lt_reached = false;
 
       for (let r = 0; r < requests; r++) {
         const count = Math.min(pending, 10);
@@ -573,11 +559,21 @@ class Block {
           result.transactionList = transactionList;
           result.blockIdList = blockIdList;
       
-          return transactionList;
+          return result;
         }
 
         if (!res) 
           throw Error("empty answer");
+
+        if (res.transactions.length === 0) {
+          console.warn('Obtained less transactions than required');
+
+          result.ok = true;
+          result.transactionList = transactionList;
+          result.blockIdList = blockIdList;
+      
+          return result;
+        }
 
         const transactionsCell = await Cell.fromBoc(res.transactions);
         if (transactionsCell.length !== res.ids.length)
@@ -601,7 +597,14 @@ class Block {
           last_lt = tr.prev_trans_lt;
           transactionList.push(tr);
           blockIdList.push(res.ids[i]);
+          if (to_lt !== undefined && last_lt.lte(to_lt)) {
+            to_lt_reached = true;
+            break;
+          }
         }
+
+        if (to_lt_reached || last_lt.lte(new BN(0)))
+          break;
 
         if (checkLast) {
           if (!compareBytes(last_hash, new Uint8Array(32)) || !last_lt.eq(new BN(0))) {
@@ -612,7 +615,7 @@ class Block {
           result.transactionList = transactionList;
           result.blockIdList = blockIdList;
       
-          return transactionList;
+          return result;
         }
       }
 
@@ -628,29 +631,6 @@ class Block {
     return result;
   }
 
-  isMasterchain() {
-
-  }
-
-  id() {
-      return this.id;
-  }
-
-  copy() {
-
-  }
-
-  isValidated() {
-
-  }
-
-  isLoaded() {
-
-  }
-
-  rawInfo() {
-
-  }
 
   validatorSigns() {
 
@@ -680,19 +660,19 @@ class Block {
 
   // state stuff
 
-  async getAccountState(accountAddr) {
+  async getAccountState(blockId, accountAddr) {
     let result = {ok:false};
     try {
-      if (!this.id)
+      if (!blockId)
         throw Error("Block has no id");
 
       const address = new Address(accountAddr);
 
-      let state = await this.provider.getAccountState(this.id, accountAddr);
+      let state = await this.provider.getAccountState(blockId, accountAddr);
       if (!state)
         throw Error("Cannot get account state");
 
-      let blockId;
+      let shardBlockId;
       if (address.wc !== -1) {
         if (state.shard_proof.length === 0)
           throw Error('No shard proof');
@@ -704,19 +684,19 @@ class Block {
 
           // check root_hash
           if (shardProofCell[0].type !== Cell.MerkleProofCell ||
-              !compareBytes(new Uint8Array(this.id.root_hash.buffer), shardProofCell[0].refs[0].getHash(0)))
+              !compareBytes(new Uint8Array(blockId.root_hash.buffer), shardProofCell[0].refs[0].getHash(0)))
             throw Error("Invalid root_hash of block");
 
           const shardBlockHeader = BlockParser.parseBlock(shardProofCell[0].refs[0]);
 
           // check other
-          if (shardBlockHeader.info.seq_no !== this.id.seqno)
+          if (shardBlockHeader.info.seq_no !== blockId.seqno)
             throw Error("Invalid seqno");
-          if (!this.id.compareShard(shardBlockHeader.info.shard.shard))
+          if (!blockId.compareShard(shardBlockHeader.info.shard.shard))
             throw Error("Invalid shard");
-          if (shardBlockHeader.info.shard.workchain_id !== this.id.workchain)
+          if (shardBlockHeader.info.shard.workchain_id !== blockId.workchain)
             throw Error("Invalid workchain");
-          if (shardBlockHeader.info.not_master != (this.id.workchain !== -1))
+          if (shardBlockHeader.info.not_master != (blockId.workchain !== -1))
             throw Error("Invalid not_master");
 
           // extract MC ShardState hash
@@ -733,7 +713,7 @@ class Block {
           if (!shardDescr)
             throw Error('No account shard found');
 
-          blockId = new BlockId({
+          shardBlockId = new BlockId({
             workchain: address.wc,
             seqno: shardDescr.seq_no,
             file_hash: shardDescr.file_hash,
@@ -744,7 +724,7 @@ class Block {
           result.mcShardState = mcShardState;
       }
       else {
-        blockId = this.id;
+        shardBlockId = blockId;
       }
 
       // state.proof ->
@@ -757,19 +737,19 @@ class Block {
 
       // check root_hash
       if (blockProofCell[0].type !== Cell.MerkleProofCell ||
-          !compareBytes(new Uint8Array(blockId.root_hash.buffer), blockProofCell[0].refs[0].getHash(0)))
+          !compareBytes(new Uint8Array(shardBlockId.root_hash.buffer), blockProofCell[0].refs[0].getHash(0)))
         throw Error("Invalid root_hash of shard block");
 
       const blockHeader = BlockParser.parseBlock(blockProofCell[0].refs[0]);
 
       // check other
-      if (blockHeader.info.seq_no !== blockId.seqno)
+      if (blockHeader.info.seq_no !== shardBlockId.seqno)
         throw Error("Invalid seqno");
-      //if (!blockId.compareShard(blockHeader.info.shard.shard))
+      //if (!shardBlockId.compareShard(blockHeader.info.shard.shard))
       //  throw Error("Invalid shard");
-      if (blockHeader.info.shard.workchain_id !== blockId.workchain)
+      if (blockHeader.info.shard.workchain_id !== shardBlockId.workchain)
         throw Error("Invalid workchain");
-      if (blockHeader.info.not_master != (blockId.workchain !== -1))
+      if (blockHeader.info.not_master != (shardBlockId.workchain !== -1))
         throw Error("Invalid not_master");
 
       // extract ShardState hash
@@ -795,12 +775,12 @@ class Block {
         // account really doesnt exist
 
         result.ok = true;
-        result.blockId = blockId;
+        result.blockId = shardBlockId;
         result.blockHeader = blockHeader;
         result.shardState = shardState;
         result.account = {_:"Account", type: 'none'};
-        result.last_trans_hash = new Uint8Array(32);
-        result.last_trans_lt = new BN(0);
+        result.lastTransHash = new Uint8Array(32);
+        result.lastTransLt = new BN(0);
 
         return result;
       }
@@ -808,9 +788,11 @@ class Block {
       const accountValue = shardState.accounts.map.get(accountKey.toString(16)).value;
       const accountCell = (await Cell.fromBoc(state.state))[0];
 
+      const accountHash = accountValue.account._ === "Cell" ? accountValue.account.getHash(0) : accountValue.account.cell.getHash(0);
+
       // get & check account hash
       if (accountCell.type !== Cell.OrdinaryCell ||
-          !compareBytes(accountCell.getHash(0), accountValue.account.getHash(0)))
+          !compareBytes(accountCell.getHash(0), accountHash))
         throw Error("Invalid account hash");
 
       const account = await BlockParser.parseAccount(accountCell);
@@ -820,8 +802,8 @@ class Block {
       result.blockHeader = blockHeader;
       result.shardState = shardState;
       result.account = account;
-      result.last_trans_hash = accountValue.last_trans_hash;
-      result.last_trans_lt = accountValue.last_trans_lt;
+      result.lastTransHash = accountValue.last_trans_hash;
+      result.lastTransLt = accountValue.last_trans_lt;
 
       return result;
     } catch(e) {
@@ -831,19 +813,19 @@ class Block {
     return result;
   }
 
-  async getConfig(configNum) {
+  async getConfig(blockId, configNum) {
     let result = {ok:false};
     try {
-      if (!this.id)
+      if (!blockId)
         throw Error("Block has no id");
-      if (this.id.workchain !== -1)
+      if (blockId.workchain !== -1)
         throw Error("Block is not a masterchain");
 
       let res;
       if (configNum === undefined)
-        res = await this.provider.getConfigAll(this.id);
+        res = await this.provider.getConfigAll(blockId);
       else
-        res = await this.provider.getConfigParams(this.id, [configNum]);
+        res = await this.provider.getConfigParams(blockId, [configNum]);
       if (!res)
         throw Error("empty answer");
 
@@ -855,19 +837,19 @@ class Block {
 
       // check root_hash
       if (blockProofCell[0].type !== Cell.MerkleProofCell ||
-          !compareBytes(new Uint8Array(this.id.root_hash.buffer), blockProofCell[0].refs[0].getHash(0)))
+          !compareBytes(new Uint8Array(blockId.root_hash.buffer), blockProofCell[0].refs[0].getHash(0)))
         throw Error("Invalid root_hash");
 
       const blockHeader = BlockParser.parseBlock(blockProofCell[0].refs[0]);
 
       // check other
-      if (blockHeader.info.seq_no !== this.id.seqno)
+      if (blockHeader.info.seq_no !== blockId.seqno)
         throw Error("Invalid seqno");
-      if (!this.id.compareShard(blockHeader.info.shard.shard))
+      if (!blockId.compareShard(blockHeader.info.shard.shard))
         throw Error("Invalid shard");
-      if (blockHeader.info.shard.workchain_id !== this.id.workchain)
+      if (blockHeader.info.shard.workchain_id !== blockId.workchain)
         throw Error("Invalid workchain");
-      if (blockHeader.info.not_master != (this.id.workchain !== -1))
+      if (blockHeader.info.not_master != (blockId.workchain !== -1))
         throw Error("Invalid not_master");
 
       // extract MC ShardState hash
@@ -884,7 +866,11 @@ class Block {
       const mcState = BlockParser.parseShardState(configProofCell[0].refs[0]);
 
       if (configNum === undefined) {
-        return mcState.custom.config;
+        result.ok = true;
+        result.blockHeader = blockHeader;
+        result.shardState = mcState;
+        result.configParams = mcState.custom.config;
+        return result;
       }
 
       if (!mcState.custom.config.config.map.has(configNum.toString(16))) {
@@ -899,8 +885,8 @@ class Block {
         result.ok = true;
         result.blockHeader = blockHeader;
         result.shardState = mcState;
-        result.config = null;
-        result.config_addr = mcState.custom.config.config_addr;
+        result.configParam = null;
+        result.configAddr = mcState.custom.config.config_addr;
 
         return result;
       }
@@ -910,13 +896,65 @@ class Block {
       result.ok = true;
       result.blockHeader = blockHeader;
       result.shardState = mcState;
-      result.config = config;
-      result.config_addr = mcState.custom.config.config_addr;
+      result.configParam = config;
+      result.configAddr = mcState.custom.config.config_addr;
 
       return result;
     } catch(e) {
       result.reason = e;
       console.log('Cannot get config:', e);
+    }
+    return result;
+  }
+
+  compute_method_id(method) {
+    let method_id;
+    try {
+      if (method.startsWith('0x'))
+        method_id = new BN(method.replace('0x', ''), 16);
+      else
+        method_id = new BN(method, 10);
+    } catch (e) {
+      let arr = stringToArray(method);
+      let crc = crc16(arr);
+      crc = new Uint8Array([crc[1], crc[0]]);
+      method_id = new BN((new Uint16Array(crc.buffer))[0] | 0x10000);
+    }
+    return method_id;
+  }
+
+  async runSmcMethod(blockId, accountAddr, method, params) {
+    let result = {ok:false};
+    try {
+      const address = new Address(accountAddr);
+      const method_id = this.compute_method_id(method);
+
+      let res = await this.provider.runSmcMethod(blockId, accountAddr, method_id, params);
+      if (!res)
+        throw Error("Cannot get account state");
+      console.log(res);
+      result.ok = true;
+    } catch (e) {
+      result.reason = e;
+      console.log('Cannot run smc method:', e);
+    }
+    return result;
+  }
+  
+  async sendMessage(message) {
+    let result = {ok:false};
+    try {
+      if (typeof message == 'string')
+        message = base64ToBytes(message);
+
+      let res = await this.provider.sendMessage(message);
+      if (!res)
+        throw Error("Cannot send message");
+
+      result.ok = true;
+    } catch (e) {
+      result.reason = e;
+      console.log('Cannot send message:', e);
     }
     return result;
   }
