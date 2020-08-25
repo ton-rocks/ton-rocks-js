@@ -1,6 +1,3 @@
-const { TONClient, setWasmOptions } = require('ton-client-web-js');
-const {Block} = require('../blockchain/Block');
-
 
 const SetcodeMultisigWalletAbi = require('./SetcodeMultisigWallet.abi.json');
 const SetcodeMultisigWalletCode = require('./SetcodeMultisigWallet.tvc.json');
@@ -17,4 +14,4 @@ const SafeMultisigWallet = {
 };
 
 
-module.exports = {EmbeddedAbiContracts: {SetcodeMultisigWallet, SafeMultisigWallet}};
+module.exports = {AbiPackages: {SetcodeMultisigWallet, SafeMultisigWallet}};

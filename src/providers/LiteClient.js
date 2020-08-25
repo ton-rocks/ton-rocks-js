@@ -15,15 +15,17 @@ class LiteClient {
     async connect() {
         this.liteclient = new Lite({
             config: this.options.config,
-            wssProxies: this.options.wssProxies
+            wssProxies: this.options.wssProxies,
+            maxConnections: 3
         });
         try {
             await this.liteclient.connect();
-            return await this.checkServer();
+            //return await this.checkServer();
+            return (await this.getLatestBlockId()).blockId;
         } catch (e) {
             console.log("Cannot connect:", e);
         }
-        return null;
+        return undefined;
     }
 
     getZeroState() {

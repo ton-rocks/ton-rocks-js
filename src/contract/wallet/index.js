@@ -1,11 +1,11 @@
 const {Address, Cell} = require("../../types");
 const {BN, toNano, bytesToHex, hexToBytes, nacl, stringToBytes, bytesToBase64} = require("../../utils");
-const {Contract} = require("../index.js");
+const {ClassicContract} = require("../ClassicContract.js");
 
 /**
  * Abstract standard wallet class
  */
-class WalletContract extends Contract {
+class WalletContract extends ClassicContract {
     /**
      * @param provider    {HttpProvider}
      * @param options?    {{code: Uint8Array, publicKey?: Uint8Array, address?: Address | string, wc?: number}}
@@ -124,8 +124,8 @@ class WalletContract extends Contract {
             }
         }
 
-        const orderHeader = Contract.createInternalMessageHeader(new Address(address), new BN(amount));
-        const order = Contract.createCommonMsgInfo(orderHeader, null, payloadCell);
+        const orderHeader = ClassicContract.createInternalMessageHeader(new Address(address), new BN(amount));
+        const order = ClassicContract.createCommonMsgInfo(orderHeader, null, payloadCell);
         const signingMessage = this.createSigningMessage(seqno);
         signingMessage.bits.writeUint8(sendMode);
         signingMessage.refs.push(order);
@@ -136,9 +136,9 @@ class WalletContract extends Contract {
         body.bits.writeBytes(signature);
         body.writeCell(signingMessage);
 
-        const header = Contract.createExternalMessageHeader(selfAddress);
+        const header = ClassicContract.createExternalMessageHeader(selfAddress);
 
-        const resultMessage = Contract.createCommonMsgInfo(header, null, body);
+        const resultMessage = ClassicContract.createCommonMsgInfo(header, null, body);
 
         return {
             address: selfAddress,
@@ -223,7 +223,7 @@ class WalletV3Contract extends WalletContract {
 
 //There are two versions of standart wallet for now (14.01.2020):
 //simple-wallet-code.fc and wallet-code.fc (the one with seqno() method)
-class Wallets {
+class ClassicWallets {
     /**
      * @param provider    {HttpProvider}
      */
@@ -238,4 +238,4 @@ class Wallets {
     }
 }
 
-module.exports.default = Wallets;
+module.exports.default = {ClassicWallets};

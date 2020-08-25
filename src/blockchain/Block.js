@@ -6,9 +6,9 @@ const {Storage} = require("../providers/Storage");
 
 class Block {
 
-  constructor(id, provider, storage) {
-    this.provider = provider || this._provider;
-    this.storage = storage || this._storage;
+  constructor(provider, storage) {
+    this.provider = provider || Block._provider;
+    this.storage = storage || Block._storage;
     this.zero_state = new BlockId(this.provider.getZeroState());
   }
 

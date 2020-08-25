@@ -21,7 +21,7 @@ async function test() {
         throw Error('something went wrong');
 
     const AbiContract = TonRocks.AbiContract;
-    await TonRocks.ContractV2.init();
+    await TonRocks.Contract.init();
 
     // connect to lite-server
     const liteClient = new TonRocks.providers.LiteClient(rocksTestnet);
@@ -48,7 +48,7 @@ async function test() {
     {
         address = new TonRocks.types.Address('-1:c47cecdf148d3911df3bb3dd7804828f0ae50376c03fc4f857c3b2522e0ba172');
         const sm = new AbiContract({
-                abiPackage: TonRocks.EmbeddedAbiContracts.SafeMultisigWallet,
+                abiPackage: TonRocks.AbiPackages.SafeMultisigWallet,
                 keys: keyPair,
                 address: address.toString(false)
             },

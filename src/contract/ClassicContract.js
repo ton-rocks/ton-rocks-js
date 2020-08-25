@@ -1,7 +1,7 @@
 const {Cell, Address} = require("../types");
 const {bytesToBase64, bytesToHex, nacl} = require("../utils");
 
-class Contract {
+class ClassicContract {
     /**
      * @param provider    {HttpProvider}
      * @param options    {{code?: Uint8Array, address?: Address, wc?: number}}
@@ -295,4 +295,4 @@ class Contract {
 //     return new TonContract(address, options);
 // }
 
-module.exports = {Contract};
+module.exports = {ClassicContract};
