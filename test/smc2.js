@@ -90,7 +90,8 @@ async function testDeploy(keyPair)
 
     console.log('Wait for account init:', smAddress.toString());
 
-    await (new Promise(resolve => setTimeout(resolve, 10000)));
+    await gimme(smAddress, 20000000000);
+    //await (new Promise(resolve => setTimeout(resolve, 10000)));
 
     while (true) {
         try {
@@ -114,7 +115,7 @@ async function testDeploy(keyPair)
     }
 
     const smSubmitTransaction = sm.methods.submitTransaction({
-        input: {"dest":"-1:2f5a3cc56bc231a5ec8f7284010bb7962fe43d1bdd877c82076293160400af6c","value":1000000000,"bounce":true,"allBalance":false,"payload":"te6ccgEBAQEAAgAAAA=="},
+        input: {"dest":"0:9a66a943e121e1cdb8e09126d3d31a88ac1e4b6d391bc0718b39af36e8de372a","value":1000000000,"bounce":true,"allBalance":false,"payload":"te6ccgEBAQEAAgAAAA=="},
         header: undefined
     });
     const smSubmitTransactionMessage = await smSubmitTransaction.getMessage();
@@ -187,6 +188,32 @@ async function testGetMethods(address)
     const smGetParametersLocalResult = await smGetParameters.runLocal();
     console.log('smGetParametersLocalResult', smGetParametersLocalResult);
 
+}
+
+async function gimme(address, amount)
+{
+    console.log('Asking giver for ', amount, 'to', address.toString(false));
+
+    const sm = new TonRocks.AbiContract({
+        abiPackage: TonRocks.AbiPackages.Giver,
+        address: "0:9a66a943e121e1cdb8e09126d3d31a88ac1e4b6d391bc0718b39af36e8de372a"
+    });
+
+    const smTransferToAddress = sm.methods.do_tvm_transfer({
+        input: {"remote_addr": address.toString(false), "grams_value": amount, "bounce": false, "sendrawmsg_flag": 0},
+        header: undefined
+    });
+
+    while (true) {
+        const smTransferToAddressResult = await smTransferToAddress.run();
+        console.log('smTransferToAddressResult', smTransferToAddressResult);
+        if (smTransferToAddressResult.ok) {
+            console.log('Giver success');
+            break;
+        }
+
+        await (new Promise(resolve => setTimeout(resolve, 10000)));
+    }
 }
 
 window.addEventListener('load', () => {

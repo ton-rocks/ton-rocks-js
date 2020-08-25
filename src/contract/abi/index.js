@@ -13,5 +13,12 @@ const SafeMultisigWallet = {
     imageBase64: SafeMultisigWalletCode.code
 };
 
+const GiverAbi = require('./Giver.abi.json');
+const GiverCode = require('./Giver.tvc.json');
+const Giver = {
+    abi: GiverAbi,
+    imageBase64: GiverCode.code
+};
 
-module.exports = {AbiPackages: {SetcodeMultisigWallet, SafeMultisigWallet}};
+
+module.exports = {AbiPackages: {SetcodeMultisigWallet, SafeMultisigWallet, Giver}};
