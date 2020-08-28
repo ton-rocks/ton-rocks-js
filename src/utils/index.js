@@ -18,6 +18,12 @@ function stringToArray(str) {
     return buf;
 }
 
+function bytesToString(b) {
+    // convert bytes to string
+    // encoding can be specfied, defaults to utf-8 which is ascii.
+    return new TextDecoder().decode(b); 
+}
+
 /**
  * @param bytes {Uint8Array}
  * @return  {Promise<ArrayBuffer>}
@@ -333,5 +339,6 @@ module.exports = {
     compareBytes,
     readNBytesUIntFromArray,
     bytesToBinString,
+    bytesToString,
     stringToArray
 };

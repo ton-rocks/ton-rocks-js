@@ -1,47 +1,91 @@
 const {Cell, Address} = require("../types");
 const {bytesToBase64, bytesToHex, nacl} = require("../utils");
+const {Block} = require('../blockchain/Block');
+const {BlockParser} = require('../blockchain/BlockParser');
+const {Contract} = require('./Contract');
 
-class ClassicContract {
+class ClassicContract extends Contract {
     /**
      * @param provider    {HttpProvider}
      * @param options    {{code?: Uint8Array, address?: Address, wc?: number}}
      */
-    constructor(provider, options) {
-        this.provider = provider;
+    constructor(options, provider) {
+        super(provider);
+        //this.provider = provider;
         this.options = options;
         this.address = options.address ? new Address(options.address) : null;
-        if (!options.wc) options.wc = this.address ? this.address.wc : 0;
+        if (!options.wc) options.wc = this.address ? this.address.wc : 0; // TODO wc
         this.methods = {};
+
+        this.keys = options.keys;
+        this.signCallback = options.signCallback;
+
 
         /**
          * @param secretKey {Uint8Array}
          */
-        this.deploy = (secretKey) => {
-            const createQuery = async () => {
-                const query = await this.createInitExternalMessage(secretKey);
-                const legacyQuery = {
-                    address: query.address.toString(true, true, false),
-                    body: query.body.toObject(),
-                    init_code: query.code.toObject(),
-                    init_data: query.data.toObject(),
-                }
-                return {query, legacyQuery};
+        this.deploy = async (params = {}) => {
+            if (!this.keys.publicKey) throw Error('no public key');
+            params.wc = params.wc !== undefined ? params.wc : 0;
+            this.options.wc = this.address ? this.address.wc : params.wc;
+
+            if (!this.address) {
+                const address = await this._getAddress();
+                this.address = new Address(address);
             }
-            const promise = createQuery();
+
+            const getDeployMessage = async () => {
+                const query = await this.createInitExternalMessage();
+                const res = {
+                    messageBodyBase64: bytesToBase64(await query.message.toBoc(false)),
+                    sign: query.sign,
+                    signed: query.signed
+                }
+                return res;
+            }
 
             return {
-                getQuery: async () => {
-                    return (await promise).query.message;
+                /*
+                */
+                getMessage: async () => {
+                  return await getDeployMessage();
                 },
-                send: async () => {
-                    const query = (await promise).query;
-                    const boc = bytesToBase64(await query.message.toBoc(false));
-                    return provider.sendBoc(boc);
+                /*
+                */
+                getAddress: () => {
+                  return this.address;
                 },
+                /*
+                */
                 estimateFee: async () => {
-                    const legacyQuery = (await promise).legacyQuery;
-                    return provider.getEstimateFee(legacyQuery); // todo: get fee by boc
-                }
+                  let msg = await getDeployMessage();
+                  return await this._estimateFee({
+                    messageBodyBase64: msg.messageBodyBase64,
+                    address: this.address,
+                    emulateBalance: true
+                  });
+                },
+                /*
+                tryNum
+                totalTimeout (UTC time in seconds)
+                */
+                run: async (p = {}) => {
+                  let res;
+                  let tryNum = p.tryNum || 3;
+                  for (let t = 0; t < tryNum; t++) {
+                    let msg = await getDeployMessage();
+                    res = await this._runMessage(msg, 'uninit', p.totalTimeout, this._checkStandartMessage);
+                    //console.log('run try', t, ': ', res);
+                    if (res.ok) {
+                      return res;
+                    }
+                    if (!res.sended)
+                      continue;
+                    if (!res.confirmed)
+                      return res;
+                  }
+                  return res;
+                },
             }
         }
     }
@@ -49,11 +93,20 @@ class ClassicContract {
     /**
      * @return {Promise<Address>}
      */
-    async getAddress() {
-        if (!this.address) {
-            this.address = (await this.createStateInit()).address;
+    async _getAddress() {
+        return (await this.createStateInit()).address;
+    }
+
+    async _runGetMethod(functionName, p={}) {
+        let account;
+        if (!p.account) {
+          account = await this._getAccount();
+          if (!account.ok) throw Error('Cannot get account state: ' + account.reason);
+          account = await this._convertAccount(account);
+        } else {
+          account = p.account;
         }
-        return this.address;
+        return await this._runGet(account, functionName, p.input);
     }
 
     /**
@@ -93,8 +146,9 @@ class ClassicContract {
     async createStateInit() {
         const codeCell = this.createCodeCell();
         const dataCell = this.createDataCell();
-        const stateInit = Contract.createStateInit(codeCell, dataCell);
-        const stateInitHash = await stateInit.hash();
+        const stateInit = ClassicContract.createStateInit(codeCell, dataCell);
+        await stateInit.finalizeTree();
+        const stateInitHash = stateInit.getHash(0);
         const address = new Address(this.options.wc + ":" + bytesToHex(stateInitHash));
         return {
             stateInit: stateInit,
@@ -109,26 +163,41 @@ class ClassicContract {
      * @param secretKey  {Uint8Array} nacl.KeyPair.secretKey
      * @return {{address: Address, message: Cell, body: Cell, sateInit: Cell, code: Cell, data: Cell}}
      */
-    async createInitExternalMessage(secretKey) {
-        if (!this.options.publicKey) {
-            const keyPair = nacl.sign.keyPair.fromSecretKey(secretKey)
-            this.options.publicKey = keyPair.publicKey;
-        }
+    async createInitExternalMessage() {
+
+        const signExist = !!this.signCallback || (this.keys && this.keys.secretKey);
+        const externalSign = !!this.signCallback && (!this.keys || !this.keys.secretKey);
+        if (!signExist) throw Error('no sign methods');
+
         const {stateInit, address, code, data} = await this.createStateInit();
 
         const signingMessage = this.createSigningMessage();
-        const signature = nacl.sign.detached(await signingMessage.hash(), secretKey);
+        await signingMessage.finalizeTree();
+        const signingMessageHash = signingMessage.getHash(0);
+
+        let sign;
+        if (externalSign) {
+            sign = params.signCallback('deploy', signingMessageHash, this.address, this.keys);
+        }
+        else {
+            sign = nacl.sign.detached(signingMessageHash, this.keys.secretKey);
+        }
 
         const body = new Cell();
-        body.bits.writeBytes(signature);
+        body.bits.writeBytes(sign);
         body.writeCell(signingMessage);
 
-        const header = Contract.createExternalMessageHeader(address);
-        const externalMessage = Contract.createCommonMsgInfo(header, stateInit, body);
+        const header = ClassicContract.createExternalMessageHeader(address);
+        const externalMessage = ClassicContract.createMessage(header, stateInit, body);
+
+        //await externalMessage.finalizeTree();
+        //let messageHash = externalMessage.getHash(0);
 
         return {
             address: address,
             message: externalMessage,
+            sign: bytesToHex(sign),
+            signed: true,
 
             body,
             signingMessage,
@@ -137,6 +206,23 @@ class ClassicContract {
             data,
         };
     }
+
+
+    _checkStandartMessage(message, inMsg) {
+        if (inMsg._ !== 'Message')
+          return false;
+
+        if (!message.signed) {
+          return message.hash === bytesToHex(inMsg.hash);
+        }
+
+        if(!inMsg.body)
+          return false;
+
+        let signature = BlockParser.parseSignatureClassic(inMsg.body);
+        return message.sign === bytesToHex(signature);
+    }
+
 
     // _ split_depth:(Maybe (## 5)) special:(Maybe TickTock)
     // code:(Maybe ^Cell) data:(Maybe ^Cell)
@@ -244,20 +330,25 @@ class ClassicContract {
         const message = new Cell();
         message.bits.writeUint(2, 2);
         message.bits.writeAddress(src ? new Address(src) : null);
-        message.bits.writeAddress(new Address(dest));
+        message.bits.writeAddress(new Address(dest));   // TODO, MsgAddressInt
         message.bits.writeGrams(importFee);
         return message;
     }
 
     //tblkch.pdf, page 57
+    /*
+    message$_ {X:Type} info:CommonMsgInfo
+      init:(Maybe (Either StateInit ^StateInit))
+      body:(Either X ^X) = Message X;
+    */
     /**
-     * Create CommonMsgInfo contains header, stateInit, body
+     * Create Message contains header, stateInit, body
      * @param header {Cell}
      * @param stateInit?  {Cell}
      * @param body?  {Cell}
      * @return {Cell}
      */
-    static createCommonMsgInfo(header, stateInit = null, body = null) {
+    static createMessage(header, stateInit = null, body = null) {
         const commonMsgInfo = new Cell();
         commonMsgInfo.writeCell(header);
 
@@ -288,6 +379,22 @@ class ClassicContract {
             commonMsgInfo.bits.writeBit(false);
         }
         return commonMsgInfo;
+    }
+
+    static arrayFromCONS(cons) {
+        let result = [];
+        let item = cons;
+
+        while (item) {
+            if (!item.length === 2) {
+                return result;
+            }
+
+            result.push(item[0]);
+            item = item[1];
+        }
+
+        return result;
     }
 }
 

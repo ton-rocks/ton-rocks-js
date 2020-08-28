@@ -10,7 +10,8 @@ const {AbiContract} = require('./contract/AbiContract');
 const {AbiPackages} = require('./contract/abi');
 
 const {ClassicContract} = require('./contract/ClassicContract');
-const {ClassicWallets} = require("./contract/wallet");
+const ClassicContracts = require("./contract/classic");
+const ClassicWallets = require("./contract/classic/wallet");
 
 const bc = require("./blockchain");
 const {BrowserStorage} = require("./providers/Storage");
@@ -40,6 +41,7 @@ class TonRocks {
         this.AbiPackages = AbiPackages;
         this.ClassicContract = ClassicContract;
         this.ClassicWallets = ClassicWallets;
+        this.ClassicContracts = ClassicContracts;
 
         this.providers = providers;
         this.configs = configs;
@@ -59,6 +61,7 @@ TonRocks.AbiContract = AbiContract;
 TonRocks.AbiPackages = AbiPackages;
 TonRocks.ClassicContract = ClassicContract;
 TonRocks.ClassicWallets = ClassicWallets;
+TonRocks.ClassicContracts = ClassicContracts;
 
 TonRocks.providers = providers;
 TonRocks.configs = configs;

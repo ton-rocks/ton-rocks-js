@@ -12,6 +12,16 @@ class Block {
     this.zero_state = new BlockId(this.provider.getZeroState());
   }
 
+  async callMethod(retry, method) {
+    let res;
+    for (let i = 0; i < retry; i++) {
+      res = await method();
+      if (res.ok)
+        return res;
+    }
+    return res;
+  }
+
   async getLatestId() {
     let result = {ok:false};
     try {
@@ -117,7 +127,7 @@ class Block {
       result.ok = true;
       result.blockHeader = blockHeader;
 
-      return blockHeader;
+      return result;
     } catch(e) {
       result.reason = e;
       console.log('Cannot lookup block:', e);
@@ -173,7 +183,7 @@ class Block {
     return result;
   }
 
-  validators_crc32c(nodes, cc_seqno) {
+  _validators_crc32c(nodes, cc_seqno) {
     const tot_size = 1 + 1 + 1 + nodes.length * (8 + 2 + 8);
     let buff = new Uint32Array(tot_size);
     buff[0] = 0x901660ED;   // -1877581587
@@ -195,7 +205,7 @@ class Block {
     return (new Uint32Array(crc32c(new Uint8Array(buff.buffer)).buffer))[0];
   }
 
-  async compute_validators_set(gen, validators, count, shuffle_mc_val) {
+  async _compute_validators_set(gen, validators, count, shuffle_mc_val) {
     let nodes = [];
     if (shuffle_mc_val) {
       // shuffle mc validators from the head of the list
@@ -221,7 +231,7 @@ class Block {
     return nodes;
   }
 
-  async compute_node_id_short(ed25519_pubkey) {
+  async _compute_node_id_short(ed25519_pubkey) {
     // pub.ed25519#4813b4c6 key:int256 = PublicKey;
     let pk = new Uint8Array(36);
     pk.set([0xc6, 0xb4, 0x13, 0x48], 0);
@@ -384,8 +394,8 @@ class Block {
             let catchainConfig = config.config.map.get('1c').catchain;
             const count = Math.min(validators.main, validators.total);
             const prng = new ValidatorSetPRNG(BlockId.shardMasterchain(), -1, gen_catchain_seqno);
-            const nodes = await this.compute_validators_set(prng, validators.list.map, count, catchainConfig.shuffle_mc_validators);
-            const validator_list_hash_short = this.validators_crc32c(nodes, gen_catchain_seqno);
+            const nodes = await this._compute_validators_set(prng, validators.list.map, count, catchainConfig.shuffle_mc_validators);
+            const validator_list_hash_short = this._validators_crc32c(nodes, gen_catchain_seqno);
             if (validator_list_hash_short !== gen_validator_list_hash_short)
               throw Error('Computed validator set for block is invaid');
             if (validator_list_hash_short !== (new Uint32Array([k.signatures.validator_set_hash]))[0])
@@ -402,7 +412,7 @@ class Block {
             let node_list = {};
             for (let j = 0; j < nodes.length; j++) {
               total_weight.iadd(nodes[j].weight);
-              const shord_id = new Uint8Array(await this.compute_node_id_short(nodes[j].key));
+              const shord_id = new Uint8Array(await this._compute_node_id_short(nodes[j].key));
               node_list[bytesToHex(shord_id)] = nodes[j];
             }
 
@@ -636,7 +646,7 @@ class Block {
 
   }
 
-  shardGetFromHashmap(m, wc, addr) {
+  _shardGetFromHashmap(m, wc, addr) {
     if (!m.map.has(wc.toString()))
       return;
 
@@ -709,7 +719,7 @@ class Block {
 
           const mcShardState = BlockParser.parseShardState(shardProofCell[1].refs[0]);
 
-          const shardDescr = this.shardGetFromHashmap(mcShardState.custom.shard_hashes, address.wc, address.hashPart);
+          const shardDescr = this._shardGetFromHashmap(mcShardState.custom.shard_hashes, address.wc, address.hashPart);
           if (!shardDescr)
             throw Error('No account shard found');
 
@@ -924,6 +934,7 @@ class Block {
   }
 
   async runSmcMethod(blockId, accountAddr, method, params) {
+    console.warn('Incomplete, do not use');
     let result = {ok:false};
     try {
       const address = new Address(accountAddr);
@@ -932,7 +943,9 @@ class Block {
       let res = await this.provider.runSmcMethod(blockId, accountAddr, method_id, params);
       if (!res)
         throw Error("Cannot get account state");
-      console.log(res);
+
+      // TODO proof checks
+      result.smc = res;
       result.ok = true;
     } catch (e) {
       result.reason = e;
@@ -961,28 +974,6 @@ class Block {
 
 }
 
-/*
-void validator_set_descr::hash_to(unsigned char hash_buffer[64]) const {
-  digest::hash_str<digest::SHA512>(hash_buffer, (const void*)this, sizeof(*this));
-}
-
-td::uint64 ValidatorSetPRNG::next_ulong() {
-  if (pos < limit) {
-    return td::bswap64(hash_longs[pos++]);
-  }
-  data.hash_to(hash);
-  data.incr_seed();
-  pos = 1;
-  limit = 8;
-  return td::bswap64(hash_longs[0]);
-}
-
-td::uint64 ValidatorSetPRNG::next_ranged(td::uint64 range) {
-  td::uint64 y = next_ulong();
-  return td::uint128(range).mult(y).hi();
-}
-*/
-
 function bswap32(x) {
   return new Uint8Array([x[3], x[2], x[1], x[0]]);
 }
@@ -1003,13 +994,10 @@ class ValidatorSetPRNG {
     */
     this.data = new Uint8Array(32+8+4+4);
     /*
-    shard(td::bswap64(shard_id.shard))
-    workchain(td::bswap32(shard_id.workchain))
-    cc_seqno(td::bswap32(cc_seqno_)
+      shard(td::bswap64(shard_id.shard))
+      workchain(td::bswap32(shard_id.workchain))
+      cc_seqno(td::bswap32(cc_seqno_)
     */
-    //this.dataU8 = new Uint8Array(this.data);
-    //this.dataU32 = new Uint32Array(this.data);
-    //this.dataI32 = new Int32Array(this.data);
     let shardA = shard.toArray('be', 8);
     let workchainA = new Uint8Array((new Uint32Array([wc])).buffer);
     let cc_seqnoA = new Uint8Array((new Uint32Array([cc_seqno])).buffer);
@@ -1028,28 +1016,20 @@ class ValidatorSetPRNG {
     if (this.pos < this.limit) {
       let res = this.hash.slice(this.pos*8, this.pos*8 + 8);
       this.pos++;
-      //console.log('hex', bytesToHex(res));
       return new BN(res, 10, 'be');
     }
-    //console.log('data', bytesToHex(this.data));
     this.hash = new Uint8Array(await sha512(this.data));
-    //console.log('hash', bytesToHex(this.hash));
     this.incr_seed();
     this.pos = 1;
     this.limit = 8;
     let res = this.hash.slice(0, 8);
-    //console.log('hex', bytesToHex(res));
     return new BN(res, 10, 'be');
   }
 
   async next_ranged(range) {
     let y = await this.next_ulong();
-    //console.log('next_ulong 16', y.toString(16));
-    //console.log('next_ulong 10', y.toString(10));
     y.imul(new BN(range));
     y.ishrn(64);
-    //console.log('next_ranged 16', y.toString(16));
-    //console.log('next_ranged 10', y.toString(10));
     return y;
   }
 }

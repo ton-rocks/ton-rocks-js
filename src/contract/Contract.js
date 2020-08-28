@@ -1,5 +1,5 @@
 const {TONClient, setWasmOptions} = require('ton-client-web-js');
-const {bytesToBase64, base64ToBytes, bytesToHex, hexToBytes, nacl, BN} = require('../utils');
+const {stringToBytes, bytesToString, bytesToBase64, base64ToBytes, bytesToHex, hexToBytes, nacl, BN} = require('../utils');
 const {Address, Cell} = require('../types');
 const {Block} = require('../blockchain/Block');
 const {BlockParser} = require('../blockchain/BlockParser');
@@ -52,12 +52,12 @@ class Contract {
     this.bigBalance = '0x10000000000000';
 
     this.config = {
-      sendTryCount: 3,
-      queryTryCount: 3,
+      sendTryCount: 10,
+      queryTryCount: 10,
       expireDefault: 10000,
       expireExtDefault: 60000,
       syncMaxDiff: 30,
-      runTimeout: 20000
+      runTimeout: 60000
     }
   }
 
@@ -163,6 +163,7 @@ class Contract {
 
         break;
       } catch (e) {
+        console.log('Exception while _getAccount (will retry ' + (this.config.queryTryCount - i - 1) + ' times):', e);
         reason = e.toString();
       }
     }
@@ -605,46 +606,33 @@ class Contract {
     };
   }
 
-  async _runGet(code, data, functionName, input) {
+  async _runGet(account, functionName, input) {
     // TODO
+    let acc = this._convertAccountToInternal(account);
+
     let result = await this.client.runGet({
-      codeBase64: code,
-      dataBase64: data,
+      codeBase64: acc.code,
+      dataBase64: acc.data,
       input: input,
       functionName: functionName
     });
+    
     return result;
   }
 
-  async _runGetAccount(functionName, input) {
-    const a = await this._getAccount();
-
-    let acc = await this._convertAccount(a);
-    let account = this._convertAccountToInternal(acc);
-
-    return await this._runGet(account.code, account.data, functionName, input);
-  }
-
-  _checkMessage(message, inMsg) {
+  _checkMessageHash(message, inMsg) {
     if (inMsg._ !== 'Message')
       return false;
 
-    if (!message.signed) {
-      return message.hash === bytesToHex(inMsg.hash);
-    }
-
-    if(!inMsg.body)
-      return false;
-
-    let signature = BlockParser.parseSignature(inMsg.body);
-    return message.sign === bytesToHex(signature);
+    return message.hash === bytesToHex(inMsg.hash);
   }
+
 
   /*
   accountPreState 'uninit', 'active', 'frozen'
   totalTimeout (UTC time in seconds), 0 = send message, but do not wait for confirmation
   */
-  async _runMessage(message, accountPreState, totalTimeout) {
+  async _runMessage(message, accountPreState, totalTimeout, checkMessageFunc) {
     let accountPre;
     try {
       accountPre = await this._getAccount();
@@ -779,7 +767,9 @@ class Contract {
                 continue;
               }
 
-              const signValid = this._checkMessage(message, transaction.in_msg);
+              const signValid = checkMessageFunc !== undefined ?
+                                  checkMessageFunc(message, transaction.in_msg) :
+                                  this._checkMessageHash(message, transaction.in_msg);
 
               if (signValid) {
                 return {
@@ -807,7 +797,7 @@ class Contract {
       currentLastTransHash = accountCurr.lastTransHash;
       currentShardBlockUtime = accountCurr.blockHeader.info.gen_utime;
 
-      if (currentShardBlockUtime > message.expire) {
+      if (message.expire !== undefined && currentShardBlockUtime > message.expire) {
         return {
           ok: false,
           sended: true,
@@ -823,6 +813,39 @@ class Contract {
       await (new Promise(resolve => setTimeout(resolve, 2000)));
     }
   }
+
+  // payload <string>
+  async getPayloadFromString(payload) {
+    const payloadCell = new Cell();
+
+    if (typeof payload === 'string') {
+      if (payload.length > 0) {
+        if (payload.length > 250)
+          payload = payload.substring(0, 250);
+        payloadCell.bits.writeUint(0, 32);
+        payloadCell.bits.writeBytes(stringToBytes(payload));
+      }
+    }
+
+    return bytesToBase64(await payloadCell.toBoc(false, false, false));
+  }
+
+  async getStringFromPayload(payloadBase64) {
+    const payloadCell = await Cell.fromBoc(base64ToBytes(payloadBase64));
+
+    if (payloadCell.bits.cursor < 32)
+      return;
+
+    const h = payloadCell.bits.readUint32(0);
+    if (h === 0) {
+      if (payloadCell.bits.cursor < 40)
+        return "";
+
+      const strBytes = payloadCell.bits.getRange(32, payloadCell.bits.cursor - 32);
+      return bytesToString(strBytes);
+    }
+  }
+
 
 }
 

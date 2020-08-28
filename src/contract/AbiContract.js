@@ -108,7 +108,7 @@ class AbiContract extends Contract {
           let tryNum = p.tryNum || 3;
           for (let t = 0; t < tryNum; t++) {
             let msg = await getDeployMessage();
-            res = await this._runMessage(msg, 'uninit', p.totalTimeout);
+            res = await this._runMessage(msg, 'uninit', p.totalTimeout, this._checkAbiMessage);
             //console.log('run try', t, ': ', res);
             if (res.ok) {
               if (functionBlock && functionBlock.inputs && functionBlock.inputs.length > 0) {
@@ -221,7 +221,7 @@ class AbiContract extends Contract {
 
             for (let t = 0; t < tryNum; t++) {
               let msg = await getMessage();
-              res = await this._runMessage(msg, 'active', p.totalTimeout);
+              res = await this._runMessage(msg, 'active', p.totalTimeout, this._checkAbiMessage);
               //console.log('run try', t, ': ', res);
 
               if (res.ok) {
@@ -282,6 +282,21 @@ class AbiContract extends Contract {
 
     return messageUnsigned.addressHex;
   } 
+
+  _checkAbiMessage(message, inMsg) {
+    if (inMsg._ !== 'Message')
+      return false;
+
+    if (!message.signed) {
+      return message.hash === bytesToHex(inMsg.hash);
+    }
+
+    if(!inMsg.body)
+      return false;
+
+    let signature = BlockParser.parseSignature(inMsg.body);
+    return message.sign === bytesToHex(signature);
+  }
 
   async getDeployMessage(params) {
     if (!params.abi) throw Error('no abi');

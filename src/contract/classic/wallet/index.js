@@ -1,6 +1,6 @@
-const {Address, Cell} = require("../../types");
-const {BN, toNano, bytesToHex, hexToBytes, nacl, stringToBytes, bytesToBase64} = require("../../utils");
-const {ClassicContract} = require("../ClassicContract.js");
+const {Address, Cell} = require("../../../types");
+const {BN, toNano, bytesToHex, hexToBytes, nacl, stringToBytes, bytesToBase64} = require("../../../utils");
+const {ClassicContract} = require("../../ClassicContract.js");
 
 /**
  * Abstract standard wallet class
@@ -10,9 +10,9 @@ class WalletContract extends ClassicContract {
      * @param provider    {HttpProvider}
      * @param options?    {{code: Uint8Array, publicKey?: Uint8Array, address?: Address | string, wc?: number}}
      */
-    constructor(provider, options) {
-        if (!options.publicKey && !options.address) throw new Error('WalletContract required publicKey or address in options')
-        super(provider, options);
+    constructor(options, provider) {
+        //if (!options.publicKey && !options.address) throw new Error('WalletContract required publicKey or address in options')
+        super(options, provider);
 
         this.methods = {
             /**
@@ -20,30 +20,62 @@ class WalletContract extends ClassicContract {
              */
             transfer: (params) => {
 
-                const createQuery = async () => {
-                    const query = await this.createTransferMessage(params.secretKey, params.toAddress, params.amount, params.seqno, params.payload, params.sendMode, !Boolean(params.secretKey));
-                    const legacyQuery = {
-                        address: query.address.toString(true, true, true),
-                        body: bytesToBase64(await query.body.toBoc(false))
+                const getMessage = async () => {
+                    const query = await this.createTransferMessage(this.keys.secretKey, params.toAddress, params.amount, params.seqno, params.payload, params.sendMode);
+                    const res = {
+                        messageBodyBase64: bytesToBase64(await query.message.toBoc(false)),
+                        sign: query.sign,
+                        signed: query.signed
                     }
-                    return {query, legacyQuery};
+                    return res;
                 }
 
-                const promise = createQuery();
-
                 return {
-                    getQuery: async () => {
-                        return (await promise).query.message;
+                    getMessage: async () => {
+                        return await getMessage();
                     },
-                    send: async () => {
-                        const query = (await promise).query;
-                        const boc = bytesToBase64(await query.message.toBoc(false));
-                        return provider.sendBoc(boc);
+                    /*
+                    account
+                    emulateBalance
+                    */
+                    estimateFee: async (p = {}) => {
+                        let account;
+                        if (!p.account) {
+                          account = await this._getAccount();
+                          if (!account.ok) throw Error('Cannot get account state');
+                          account = await this._convertAccount(account);
+                        } else {
+                          account = p.account;
+                        }
+                        let msg = await getMessage();
+                        return await this._estimateFee({
+                          messageBodyBase64: msg.messageBodyBase64,
+                          address: this.address,
+                          account,
+                          emulateBalance: p.emulateBalance || false
+                        });
                     },
-                    estimateFee: async () => {
-                        const legacyQuery = (await promise).legacyQuery;
-                        return provider.getEstimateFee(legacyQuery); // todo: get fee by boc
-                    }
+                    /*
+                    tryNum
+                    totalTimeout (UTC time in seconds)
+                    */
+                    run: async (p = {}) => {
+                      let res;
+                      let tryNum = p.tryNum || 3;
+                      for (let t = 0; t < tryNum; t++) {
+                        let msg = await getMessage();
+                        res = await this._runMessage(msg, 'active', p.totalTimeout, this._checkStandartMessage);
+                        //console.log('run try', t, ': ', res);
+                        if (res.ok) {
+                          return res;
+                        }
+                        if (!res.sended)
+                          continue;
+                        if (!res.confirmed)
+                          return res;
+                      }
+                      return res;
+                    },
                 }
             },
             seqno: () => {
@@ -51,16 +83,9 @@ class WalletContract extends ClassicContract {
                     /**
                      * @return {Promise<number>}
                      */
-                    call: async () => {
-                        const address = await this.getAddress();
-                        const result = await provider.call(address.toString(false), 'seqno', []);
-                        let n = null;
-                        try {
-                            n = parseInt(result.stack[0].number.number, 16);
-                        } catch (e) {
-
-                        }
-                        return n;
+                    runLocal: async (p={}) => {
+                        const res = await this._runGetMethod('seqno', p);
+                        return parseInt(res.output[0], 16);
                     }
                 }
             }
@@ -76,7 +101,7 @@ class WalletContract extends ClassicContract {
         // 4 byte seqno, 32 byte publicKey
         const cell = new Cell();
         cell.bits.writeUint(0, 32); // seqno
-        cell.bits.writeBytes(this.options.publicKey);
+        cell.bits.writeBytes(this.keys.publicKey);
         return cell;
     }
 
@@ -124,30 +149,60 @@ class WalletContract extends ClassicContract {
             }
         }
 
+        const signExist = !!this.signCallback || (this.keys && this.keys.secretKey);
+        const externalSign = !!this.signCallback && (!this.keys || !this.keys.secretKey);
+        if (!signExist) dummySignature = true;
+
         const orderHeader = ClassicContract.createInternalMessageHeader(new Address(address), new BN(amount));
-        const order = ClassicContract.createCommonMsgInfo(orderHeader, null, payloadCell);
+        const order = ClassicContract.createMessage(orderHeader, null, payloadCell);
         const signingMessage = this.createSigningMessage(seqno);
         signingMessage.bits.writeUint8(sendMode);
         signingMessage.refs.push(order);
+        await signingMessage.finalizeTree();
+        const signingMessageHash = signingMessage.getHash(0);
 
         const selfAddress = await this.getAddress();
-        const signature = dummySignature ? new Uint8Array(64) : nacl.sign.detached(await signingMessage.hash(), secretKey);
+
+        let sign;
+        if (dummySignature) {
+            sign = new Uint8Array(64);
+        }
+        else if (externalSign) {
+            sign = params.signCallback('transfer', signingMessageHash, this.address, this.keys);
+        }
+        else {
+            sign = nacl.sign.detached(signingMessageHash, this.keys.secretKey);
+        }
+
+        //const signature = dummySignature ? new Uint8Array(64) : nacl.sign.detached(await signingMessage.hash(), secretKey);
         const body = new Cell();
-        body.bits.writeBytes(signature);
+        body.bits.writeBytes(sign);
         body.writeCell(signingMessage);
 
         const header = ClassicContract.createExternalMessageHeader(selfAddress);
 
-        const resultMessage = ClassicContract.createCommonMsgInfo(header, null, body);
+        const resultMessage = ClassicContract.createMessage(header, null, body);
 
-        return {
+        let res = {
             address: selfAddress,
             message: resultMessage, // old wallet_send_generate_external_message
 
             body: body,
-            signature: signature,
+            signature: sign,
             signingMessage: signingMessage,
         };
+
+        if (dummySignature) {
+            await resultMessage.finalizeTree();
+            res.sign = bytesToHex(resultMessage.getHash(0));
+            res.signed = false;
+        }
+        else {
+            res.sign = bytesToHex(sign);
+            res.signed = true;
+        }
+
+        return res;
     }
 }
 
@@ -156,9 +211,9 @@ class SimpleWalletContract extends WalletContract {
      * @param provider    {HttpProvider}
      * @param options? {any}
      */
-    constructor(provider, options) {
+    constructor(options, provider) {
         options.code = hexToBytes("FF0020DDA4F260810200D71820D70B1FED44D0D31FD3FFD15112BAF2A122F901541044F910F2A2F80001D31F3120D74A96D307D402FB00DED1A4C8CB1FCBFFC9ED54");
-        super(provider, options);
+        super(options, provider);
     }
 }
 
@@ -167,9 +222,9 @@ class StandardWalletContract extends WalletContract {
      * @param provider    {HttpProvider}
      * @param options? {any}
      */
-    constructor(provider, options) {
+    constructor(options, provider) {
         options.code = hexToBytes("FF0020DD2082014C97BA9730ED44D0D70B1FE0A4F260810200D71820D70B1FED44D0D31FD3FFD15112BAF2A122F901541044F910F2A2F80001D31F3120D74A96D307D402FB00DED1A4C8CB1FCBFFC9ED54");
-        super(provider, options);
+        super(options, provider);
     }
 }
 
@@ -178,10 +233,10 @@ class WalletV3Contract extends WalletContract {
      * @param provider    {HttpProvider}
      * @param options? {any}
      */
-    constructor(provider, options) {
+    constructor(options, provider) {
         options.code = hexToBytes("FF0020DD2082014C97BA9730ED44D0D70B1FE0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED54");
         if (!options.walletId) options.walletId = 698983191;
-        super(provider, options);
+        super(options, provider);
     }
 
     /**
@@ -216,14 +271,14 @@ class WalletV3Contract extends WalletContract {
         const cell = new Cell();
         cell.bits.writeUint(0, 32);
         cell.bits.writeUint(this.options.walletId, 32);
-        cell.bits.writeBytes(this.options.publicKey);
+        cell.bits.writeBytes(this.keys.publicKey);
         return cell;
     }
 }
 
 //There are two versions of standart wallet for now (14.01.2020):
 //simple-wallet-code.fc and wallet-code.fc (the one with seqno() method)
-class ClassicWallets {
+class ClassicWallet {
     /**
      * @param provider    {HttpProvider}
      */
@@ -238,4 +293,4 @@ class ClassicWallets {
     }
 }
 
-module.exports.default = {ClassicWallets};
+module.exports = {SimpleWalletContract, StandardWalletContract, WalletV3Contract};

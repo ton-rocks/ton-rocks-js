@@ -1,66 +1,19 @@
 
-async function testStart() {
-    // predefined config
-    const rocksTestnet = TonRocks.configs.RocksTestnet;
+async function testAbi() {
+    console.log('ContractABI test start');
 
-    // known blocks & hosts storage
-    const storage = new TonRocks.storages.BrowserStorage(rocksTestnet.zero_state.filehashBase64());
-    storage.load();
-    storage.addBlock(rocksTestnet.zero_state);
+    let keyPair = await testNewKeypair();
 
-    await TonRocks.Contract.init();
+    let address = await testAbiDeploy(keyPair);
 
-    // connect to lite-server
-    const liteClient = new TonRocks.providers.LiteClient(rocksTestnet);
-    while (true) {
-        const lastBlock = await liteClient.connect();
-        if (lastBlock !== undefined) {
-            console.log('connected. lastBlock:', lastBlock);
-            break;
-        }
-    }
+    let transactions = await testAbiTransact(address, keyPair, 8);
 
-    const ton = new TonRocks(liteClient, storage);
+    await testAbiGetMethods(address, transactions);
 
-    await testBlock();
-
-    let mnemonic = TonRocks.utils.bip39.generateMnemonic();
-    console.log('New mnemonic:', mnemonic);
-    console.log('validate', TonRocks.utils.bip39.validateMnemonic(mnemonic));
-
-    // Convert 12 word mnemonic to 32 byte seed
-    let seed = await TonRocks.utils.bip39.mnemonicToSeed(mnemonic);
-    seed = seed.subarray(0, 32);
-    console.log('private key:', TonRocks.utils.bytesToHex(seed));
-
-    const keyPair = TonRocks.utils.nacl.sign.keyPair.fromSeed(seed);
-    console.log('keyPair:', keyPair);
-
-    let address;
-
-    address = await testDeploy(keyPair);
-
-    await testGetMethods(address);
+    console.log('ContractABI test done');
 }
 
-async function testBlock()
-{
-    // Block api object
-    let block = new TonRocks.bc.Block();
-
-    // get latest block
-    let blockId = await block.getLatestId();
-    console.log('latestBlockId', blockId);
-
-    if (!blockId.ok)
-        return;
-
-    let blockData = await block.getData(blockId.id);
-    console.log('blockData', blockData);
-}
-
-
-async function testDeploy(keyPair)
+async function testAbiDeploy(keyPair)
 {
     let address;
 
@@ -81,17 +34,19 @@ async function testDeploy(keyPair)
 
     const smDeployMessage = await smDeploy.getMessage();
     console.log('smDeployMessage', smDeployMessage);
+    assert(smDeployMessage.messageBodyBase64);
 
     const smDeployFee = await smDeploy.estimateFee();
     console.log('smDeployFee', smDeployFee);
+    assert(smDeployFee.totalAccountFees.gt(1000));
 
     const smDeployLocal = await smDeploy.runLocal();
     console.log('smDeployLocal', smDeployLocal);
+    assert(smDeployLocal.account.code && smDeployLocal.account.data);
 
     console.log('Wait for account init:', smAddress.toString());
 
-    await gimme(smAddress, 20000000000);
-    //await (new Promise(resolve => setTimeout(resolve, 10000)));
+    await testGiverGimme(smAddress, 10000000000);
 
     while (true) {
         try {
@@ -108,49 +63,59 @@ async function testDeploy(keyPair)
     while (true) {
         const smDeployResult = await smDeploy.run();
         console.log('smDeployResult', smDeployResult);
-        if (smDeployResult.ok)
+        if (smDeployResult.ok) {
+            assert(smDeployResult.sended && smDeployResult.confirmed);
             break;
+        }
 
         await (new Promise(resolve => setTimeout(resolve, 10000)));
     }
 
+    return address;
+}
+
+async function testAbiTransact(address, keyPair, transactionNum)
+{
+    const sm = new TonRocks.AbiContract({
+        abiPackage: TonRocks.AbiPackages.SetcodeMultisigWallet,
+        address,
+        keys: keyPair
+    });
+
     const smSubmitTransaction = sm.methods.submitTransaction({
-        input: {"dest":"0:9a66a943e121e1cdb8e09126d3d31a88ac1e4b6d391bc0718b39af36e8de372a","value":1000000000,"bounce":true,"allBalance":false,"payload":"te6ccgEBAQEAAgAAAA=="},
+        input: {"dest":giverAddress,"value":1000000000,"bounce":true,"allBalance":false,"payload":"te6ccgEBAQEAAgAAAA=="},
         header: undefined
     });
     const smSubmitTransactionMessage = await smSubmitTransaction.getMessage();
     console.log('smSubmitTransactionMessage', smSubmitTransactionMessage);
+    assert(smSubmitTransactionMessage.messageBodyBase64);
 
     const smSubmitTransactionFee = await smSubmitTransaction.estimateFee();
     console.log('smSubmitTransactionFee', smSubmitTransactionFee);
+    assert(smSubmitTransactionFee.totalAccountFees.gt(1000));
 
     const smSubmitTransactionLocalResult = await smSubmitTransaction.runLocal({
         fullRun: true
     });
     console.log('smSubmitTransactionLocalResult', smSubmitTransactionLocalResult);
+    assert(smSubmitTransactionLocalResult.account.code && smSubmitTransactionLocalResult.account.data);
 
-    let transactionNum = 15;
+    let success = 0;
     for (let i = 0; i < transactionNum; i++) {
         const smSubmitTransactionResult = await smSubmitTransaction.run();
         console.log('smSubmitTransactionResult', i, smSubmitTransactionResult);
+        if (smSubmitTransactionResult.ok) success++;
     }
+    assert(success > 0);
 
-    // get method check
+    const smTransactionsAll = await sm.getTransactions();
+    console.log('smTransactionsAll', smTransactionsAll);
+    assert(smTransactionsAll.length === success + 2); // trans + initial + deploy
 
-    const smGetCustodians = sm.methods.getCustodians();
-
-    const smGetCustodiansLocalResult = await smGetCustodians.runLocal();
-    console.log('smGetCustodiansLocalResult', smGetCustodiansLocalResult);
-
-    const smGetParameters = sm.methods.getParameters();
-
-    const smGetParametersLocalResult = await smGetParameters.runLocal();
-    console.log('smGetParametersLocalResult', smGetParametersLocalResult);
-
-    return address;
+    return success;
 }
 
-async function testGetMethods(address)
+async function testAbiGetMethods(address, transactions)
 {
     address = new TonRocks.types.Address(address);
 
@@ -169,12 +134,16 @@ async function testGetMethods(address)
 
     const smTransactionsAll = await sm.getTransactions();
     console.log('smTransactionsAll', smTransactionsAll);
+    assert(smTransactionsAll.length === transactions + 2);
 
     const smTransactions3 = await sm.getTransactions(undefined, undefined, 3);
     console.log('smTransactions3', smTransactions3);
+    assert(smTransactions3.length === 3);
 
     const smTransactionsFrom = await sm.getTransactions(smTransactions3[smTransactions3.length-1].prev_trans_id);
     console.log('smTransactionsFrom', smTransactionsFrom);
+    assert(smTransactionsFrom.length === transactions + 2 - 3 &&
+        TonRocks.utils.compareBytes(smTransactionsFrom[0].hash, smTransactions3[smTransactions3.length-1].prev_trans_id.hash));
 
     // get methods (contract specific)
 
@@ -182,42 +151,12 @@ async function testGetMethods(address)
 
     const smGetCustodiansLocalResult = await smGetCustodians.runLocal();
     console.log('smGetCustodiansLocalResult', smGetCustodiansLocalResult);
+    assert(smGetCustodiansLocalResult.output.custodians.length === 1);
 
     const smGetParameters = sm.methods.getParameters();
 
     const smGetParametersLocalResult = await smGetParameters.runLocal();
     console.log('smGetParametersLocalResult', smGetParametersLocalResult);
+    assert(smGetParametersLocalResult.output.requiredTxnConfirms === '0x1');
 
 }
-
-async function gimme(address, amount)
-{
-    console.log('Asking giver for ', amount, 'to', address.toString(false));
-
-    const sm = new TonRocks.AbiContract({
-        abiPackage: TonRocks.AbiPackages.Giver,
-        address: "0:9a66a943e121e1cdb8e09126d3d31a88ac1e4b6d391bc0718b39af36e8de372a"
-    });
-
-    const smTransferToAddress = sm.methods.do_tvm_transfer({
-        input: {"remote_addr": address.toString(false), "grams_value": amount, "bounce": false, "sendrawmsg_flag": 0},
-        header: undefined
-    });
-
-    while (true) {
-        const smTransferToAddressResult = await smTransferToAddress.run();
-        console.log('smTransferToAddressResult', smTransferToAddressResult);
-        if (smTransferToAddressResult.ok) {
-            console.log('Giver success');
-            break;
-        }
-
-        await (new Promise(resolve => setTimeout(resolve, 10000)));
-    }
-}
-
-window.addEventListener('load', () => {
-(async () => {
-    await testStart();
-})();
-});

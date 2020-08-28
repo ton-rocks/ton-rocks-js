@@ -1,32 +1,7 @@
+var giverAddress = "0:9a66a943e121e1cdb8e09126d3d31a88ac1e4b6d391bc0718b39af36e8de372a";
 
-async function testStart() {
-    // predefined config
-    const rocksTestnet = TonRocks.configs.RocksTestnet;
-
-    // known blocks & hosts storage
-    const storage = new TonRocks.storages.BrowserStorage(rocksTestnet.zero_state.filehashBase64());
-    storage.load();
-    storage.addBlock(rocksTestnet.zero_state);
-
-    await TonRocks.Contract.init();
-
-    // connect to lite-server
-    const liteClient = new TonRocks.providers.LiteClient(rocksTestnet);
-    while (true) {
-        const lastBlock = await liteClient.connect();
-        if (lastBlock !== undefined) {
-            console.log('connected. lastBlock:', lastBlock);
-            break;
-        }
-    }
-
-    const ton = new TonRocks(liteClient, storage);
-
-    let address = await deployAndTestGiver();
-}
-
-async function deployAndTestGiver() {
-
+async function testGiverDeploy()
+{
     let address;
 
     const sm = new TonRocks.AbiContract({
@@ -99,12 +74,34 @@ async function deployAndTestGiver() {
 
     console.log('Giver test done. Your giver address: ' + address.toString(false));
 
+    giverAddress = address.toString(false);
+
     return address;
 }
 
 
-window.addEventListener('load', () => {
-(async () => {
-    await testStart();
-})();
-});
+async function testGiverGimme(address, amount)
+{
+    console.log('Asking giver for', amount, 'to', address.toString(false));
+
+    const sm = new TonRocks.AbiContract({
+        abiPackage: TonRocks.AbiPackages.Giver,
+        address: giverAddress
+    });
+
+    const smTransferToAddress = sm.methods.do_tvm_transfer({
+        input: {"remote_addr": address.toString(false), "grams_value": amount, "bounce": false, "sendrawmsg_flag": 0},
+        header: undefined
+    });
+
+    while (true) {
+        const smTransferToAddressResult = await smTransferToAddress.run();
+        console.log('smTransferToAddressResult', smTransferToAddressResult);
+        if (smTransferToAddressResult.ok) {
+            console.log('Giver was happy to help');
+            break;
+        }
+
+        await (new Promise(resolve => setTimeout(resolve, 10000)));
+    }
+}

@@ -1430,6 +1430,15 @@ function loadSignature(any) {
     return signature;
 }
 
+function loadSignatureClassic(any) {
+    if (any._ !== 'Any')
+        throw Error('not an any');
+
+    let t = {cs: any.current_pos, ref: any.current_ref};
+
+    let signature = loadBits(any.cell, t, 512);
+    return signature;
+}
 
 /*
 message$_ {X:Type} info:CommonMsgInfo
@@ -2091,6 +2100,10 @@ class BlockParser {
 
     static parseSignature(any) {
         return loadSignature(any);
+    }
+
+    static parseSignatureClassic(any) {
+        return loadSignatureClassic(any);
     }
 
     static checkBlockHeader(cell, blockId) {
