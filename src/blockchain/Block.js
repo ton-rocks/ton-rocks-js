@@ -1,17 +1,35 @@
-const {BitString, Cell, Address} = require("../types");
-const {BN, nacl, sha256, sha512, crc16, crc32c, compareBytes, base64ToBytes, bytesToBase64, bytesToBinString, bytesToHex, concatBytes, stringToArray} = require("../utils");
+const {Cell, Address} = require("../types");
+const {BN, nacl, sha256, sha512, crc16, crc32c, compareBytes, base64ToBytes, bytesToBinString, bytesToHex, concatBytes, stringToArray} = require("../utils");
 const {BlockParser} = require("./BlockParser");
 const {BlockId} = require("./BlockId");
-const {Storage} = require("../providers/Storage");
 
+
+/**
+ * Main BlockAPI class. <br>
+ * Examples in test/test-blockapi.js
+ */
 class Block {
 
+  /**
+   * Creates BlockAPI class
+   * 
+   * @constructor
+   * @param {Object} provider Provider object
+   * @param {Object} storage Storage object
+   */
   constructor(provider, storage) {
     this.provider = provider || Block._provider;
     this.storage = storage || Block._storage;
     this.zero_state = new BlockId(this.provider.getZeroState());
   }
 
+  /**
+   * Tries to run method function several times
+   * 
+   * @param {number} retry Retry count
+   * @param {Function} method Async BlockAPI function
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined)}>} Function result object
+   */
   async callMethod(retry, method) {
     let res;
     for (let i = 0; i < retry; i++) {
@@ -22,6 +40,11 @@ class Block {
     return res;
   }
 
+  /**
+   * Gets latest known block id
+   * 
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined), id:(BlockId|undefined), clientDiff:(number|undefined), serverDiff:(number|undefined), tonDiff:(number|undefined)}>} result
+   */
   async getLatestId() {
     let result = {ok:false};
     try {
@@ -43,6 +66,14 @@ class Block {
     return result;
   }
 
+  /**
+   * Tries to lookup block by id, lt or time
+   * 
+   * @param {BlockId} blockId? Block id to lookup
+   * @param {BN} lt? Block logical time
+   * @param {number} utime? Block create unix time
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined), id:(BlockId|undefined), blockHeader:(Object|undefined)}>} Query result
+   */
   async lookup(blockId, lt, utime) {
     let result = {ok:false};
     try {
@@ -92,6 +123,12 @@ class Block {
     return result;
   }
 
+  /**
+   * Gets header of block
+   * 
+   * @param {BlockId} blockId Block id object
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined), blockHeader:(Object|undefined)}>} 
+   */
   async getHeader(blockId) {
     let result = {ok:false};
     try {
@@ -135,7 +172,12 @@ class Block {
     return result;
   }
 
-
+  /**
+   * Gets block data
+   * 
+   * @param {BlockId} blockId Block id object
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined), block:(Object|undefined)}>} 
+   */
   async getData(blockId) {
     let result = {ok:false};
     try {
@@ -239,6 +281,12 @@ class Block {
     return await sha256(pk);
   }
 
+  /**
+   * Validates block by Merkle proofs
+   * 
+   * @param {BlockId} blockId Block id object
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined), valid:(boolean|undefined)}>} 
+   */
   async validate(blockId) {
     let result = {ok:false};
     try {
@@ -320,7 +368,7 @@ class Block {
 
           const proofCell = await Cell.fromBoc(proof);
           let state_hash;
-          let utime;
+          //let utime;
           let blockFrom;
           let blockTo;
           if (k.from.seqno > 0) {
@@ -340,7 +388,7 @@ class Block {
             if (Boolean(blockTo.info.key_block) !== k.to_key_block)
               throw Error("Incorrect is_key_block value");
 
-            utime = blockTo.info.gen_utime;
+            //utime = blockTo.info.gen_utime;
           }
           if (!fwd) {
             // check a backward link
@@ -367,7 +415,7 @@ class Block {
           } else {
             // check a forward link
             let config;
-            const gen_utime = blockTo.info.gen_utime;
+            //const gen_utime = blockTo.info.gen_utime;
             const gen_catchain_seqno = blockTo.info.gen_catchain_seqno;
             const gen_validator_list_hash_short = blockTo.info.gen_validator_list_hash_short;
 
@@ -468,6 +516,12 @@ class Block {
     return result;
   }
 
+  /**
+   * Gets shards info
+   * 
+   * @param {BlockId} blockId Block id object
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined), shardHashes:(Object|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined)}>} 
+   */
   async getShards(blockId) {
     let result = {ok:false};
     try {
@@ -537,6 +591,16 @@ class Block {
     return result;
   }
 
+  /**
+   * Gets transaction list
+   * 
+   * @param {number} maxCount Maximum number of transactions
+   * @param {Address | string} accountAddr Account address
+   * @param {BN} lt Logical time of first transaction
+   * @param {Uint32Array} hash Hash of first transaction
+   * @param {BN} to_lt Logical time of last transaction (not including)
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined), transactionList:(Object|undefined), blockIdList:(Object|undefined)}>} 
+   */
   async getTransactions(maxCount, accountAddr, lt, hash, to_lt) {
     let result = {ok:false};
     try {
@@ -668,8 +732,13 @@ class Block {
 
   }
 
-  // state stuff
-
+  /**
+   * Gets account state
+   * 
+   * @param {BlockId} blockId Block id object
+   * @param {Address | string} accountAddr Account address
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined), account:(Object|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined), lastTransHash:(Uint32Array|undefined), lastTransLt:(BN|undefined)}>} 
+   */
   async getAccountState(blockId, accountAddr) {
     let result = {ok:false};
     try {
@@ -823,6 +892,13 @@ class Block {
     return result;
   }
 
+  /**
+   * Gets blockchain config
+   * 
+   * @param {BlockId} blockId Block id object
+   * @param {number} configNum? Config number (All if not specified)
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined), configParam:(Object|undefined), configAddr:(Uint8Array|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined)}>} 
+   */
   async getConfig(blockId, configNum) {
     let result = {ok:false};
     try {
@@ -933,6 +1009,14 @@ class Block {
     return method_id;
   }
 
+  /**
+   * Runs get method on remote node
+   * 
+   * @todo Make proof checks
+   * @param {BlockId} blockId Block id object
+   * @param {Address | string} accountAddr Account address
+   * @returns {Promise<{ok:boolean, reason:(Error|undefined), smc:(Object|undefined)}>} 
+   */
   async runSmcMethod(blockId, accountAddr, method, params) {
     console.warn('Incomplete, do not use');
     let result = {ok:false};
@@ -940,11 +1024,10 @@ class Block {
       const address = new Address(accountAddr);
       const method_id = this.compute_method_id(method);
 
-      let res = await this.provider.runSmcMethod(blockId, accountAddr, method_id, params);
+      let res = await this.provider.runSmcMethod(blockId, address, method_id, params);
       if (!res)
         throw Error("Cannot get account state");
 
-      // TODO proof checks
       result.smc = res;
       result.ok = true;
     } catch (e) {
@@ -977,9 +1060,9 @@ class Block {
 function bswap32(x) {
   return new Uint8Array([x[3], x[2], x[1], x[0]]);
 }
-function bswap64(x) {
-  return new Uint8Array([x[7], x[6], x[5], x[4], x[3], x[2], x[1], x[0]]);
-}
+//function bswap64(x) {
+//  return new Uint8Array([x[7], x[6], x[5], x[4], x[3], x[2], x[1], x[0]]);
+//}
 
 class ValidatorSetPRNG {
   constructor(shard, wc, cc_seqno) {
@@ -1008,8 +1091,7 @@ class ValidatorSetPRNG {
 
   incr_seed() {
     let seed = this.data;
-    for (let i = 31; i >= 0 && !++(seed[i]); --i) {
-    }
+    for (let i = 31; i >= 0 && !++(seed[i]); --i);
   }
 
   async next_ulong() {

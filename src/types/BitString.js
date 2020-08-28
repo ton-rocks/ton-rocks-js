@@ -293,13 +293,6 @@ class BitString {
         }
     }
 
-    // remove this
-    writeAddressExt(address) {
-        this.writeUint(1, 2);
-        this.writeUint(1, 9);
-        this.writeUint(0, 1);
-    }
-
     /**
      * write another BitString to this BitString
      * @param anotherBitString  {BitString}

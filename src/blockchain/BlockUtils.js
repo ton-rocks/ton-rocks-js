@@ -1,39 +1,107 @@
-const {BitString} = require("../types/BitString");
 const {Cell} = require("../types/Cell");
-const {BN, compareBytes} = require("../utils");
 
 
+/**
+ * Loads Uint
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {BN}
+ */
 function loadUint(cell, t, n) {
     if (t.cs + n > cell.bits.cursor)
         throw Error("cannot load uint");
     const i = cell.bits.readUint(t.cs, n); t.cs += n;
     return i;
 }
+
+/**
+ * Loads Uint8
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {number}
+ */
 function loadUint8(cell, t) {
     return loadUint(cell, t, 8).toNumber();
 }
+
+/**
+ * Loads Uint16
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {number}
+ */
 function loadUint16(cell, t) {
     return loadUint(cell, t, 16).toNumber();
 }
+
+/**
+ * Loads Uint32
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {number}
+ */
 function loadUint32(cell, t) {
     return loadUint(cell, t, 32).toNumber();
 }
+
+/**
+ * Loads Uint64
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {BN}
+ */
 function loadUint64(cell, t) {
     return loadUint(cell, t, 64);
 }
 
+/**
+ * Loads Int8
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {number}
+ */
 function loadInt8(cell, t) {
     if (t.cs + 8 > cell.bits.cursor)
         throw Error("cannot load int8");
     const i = cell.bits.readInt8(t.cs); t.cs += 8;
     return i;
 }
+
+/**
+ * Loads Int16
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {number}
+ */
 function loadInt16(cell, t) {
     if (t.cs + 16 > cell.bits.cursor)
         throw Error("cannot load int16");
     const i = cell.bits.readInt16(t.cs); t.cs += 16;
     return i;
 }
+
+/**
+ * Loads Int32
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {number}
+ */
 function loadInt32(cell, t) {
     if (t.cs + 32 > cell.bits.cursor)
         throw Error("cannot load int32");
@@ -41,11 +109,28 @@ function loadInt32(cell, t) {
     return i;
 }
 
+/**
+ * Loads Bit
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {number}
+ */
 function loadBit(cell, t) {
     if (t.cs + 1 > cell.bits.cursor)
         throw Error("cannot load bit");
     return cell.bits.get(t.cs++) ? 1 : 0;
 }
+
+/**
+ * Loads Bits
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Uint8Array}
+ */
 function loadBits(cell, t, n) {
     if (t.cs + n > cell.bits.cursor)
         throw Error("cannot load bits");
@@ -54,12 +139,28 @@ function loadBits(cell, t, n) {
     return bits;
 }
 
+/**
+ * Loads Bool
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {boolean}
+ */
 function loadBool(cell, t) {
     if (t.cs + 1 > cell.bits.cursor)
         throw Error("cannot load Bool");
     return cell.bits.get(t.cs++) ? true : false;
 }
 
+/**
+ * Loads UintLeq
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {number}
+ */
 function loadUintLeq(cell, t, n) {
     let last_one = -1;
     let l = 1;
@@ -76,14 +177,29 @@ function loadUintLeq(cell, t, n) {
     return data;
 }
 
+/**
+ * Loads UintLess
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {number}
+ */
 function loadUintLess(cell, t, n) {
     return loadUintLeq(cell, t, n-1);
 }
 
-/*
-var_uint$_ {n:#} len:(#< n) value:(uint (len * 8))
-     = VarUInteger n;
-*/
+/**
+ * Loads VarUInteger  <br>
+ * 
+ * var_uint$_ {n:#} len:(#< n) value:(uint (len * 8)) <br>
+ *      = VarUInteger n;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
 function loadVarUInteger(cell, t, n) {
     let data = {_:"VarUInteger"};
     data.len = loadUintLess(cell, t, n);
@@ -94,9 +210,16 @@ function loadVarUInteger(cell, t, n) {
     return data;
 }
 
-/*
-nanograms$_ amount:(VarUInteger 16) = Grams;  
-*/
+/**
+ * Loads Grams  <br>
+ * 
+ * nanograms$_ amount:(VarUInteger 16) = Grams;  
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
 function loadGrams(cell, t) {
     let data = {_:"Grams"};
     data.amount = loadVarUInteger(cell, t, 16);
@@ -104,9 +227,17 @@ function loadGrams(cell, t) {
 }
 
 
-/*
-^ X
-*/
+/**
+ * Loads Ref  <br>
+ * 
+ * ^ X
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @param {Function} f Function to parse ref
+ * @returns {Object}
+ */
 function loadRefIfExist(cell, t, f) {
     const r = cell.refs[t.ref++];
     // do not load prunned cell
@@ -118,10 +249,19 @@ function loadRefIfExist(cell, t, f) {
 }
 
 
-/*
-nothing$0 {X:Type} = Maybe X;
-just$1 {X:Type} value:X = Maybe X;
-*/
+/**
+ * Loads Maybe  <br>
+ * 
+ * nothing$0 {X:Type} = Maybe X; <br>
+ * just$1 {X:Type} value:X = Maybe X;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @param {Function} f Function to parse ref
+ * @param {Object} extra Extra parameters to function
+ * @returns {Object}
+ */
 function loadMaybe(cell, t, f, extra) {
     const exist = loadBit(cell, t);
     if (!exist || !f) {
@@ -133,9 +273,18 @@ function loadMaybe(cell, t, f, extra) {
         return f(cell, t);
 }
 
-/*
-Maybe ^X
-*/
+/**
+ * Loads Maybe with ref <br>
+ * 
+ * Maybe ^X
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @param {Function} f Function to parse ref
+ * @param {Function} f2 Function to parse PrunnedBranchCell
+ * @returns {Object}
+ */
 function loadMaybeRef(cell, t, f, f2) {
     const exist = loadBit(cell, t);
     if (!exist || !f) {
@@ -150,10 +299,19 @@ function loadMaybeRef(cell, t, f, f2) {
         return c;
 }
 
-/*
-left$0 {X:Type} {Y:Type} value:X = Either X Y;
-right$1 {X:Type} {Y:Type} value:Y = Either X Y;
-*/
+/**
+ * Loads Either <br>
+ * 
+ * left$0 {X:Type} {Y:Type} value:X = Either X Y; <br>
+ * right$1 {X:Type} {Y:Type} value:Y = Either X Y;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @param {Function} fx Function to parse X
+ * @param {Function} fy Function to parse Y
+ * @returns {Object}
+ */
 function loadEither(cell, t, fx, fy) {
     const b = loadBit(cell, t);
     if (b === 0) {

@@ -9,7 +9,7 @@ const hash_bytes = 32;
 const depth_bytes = 2;
 
 
-DEBUG = false;
+var DEBUG = false;
 function debug_log() {
     if ( DEBUG ) {
         console.log.apply(this, arguments);
@@ -279,6 +279,7 @@ class Cell {
             break;
 
             case Cell.PrunnedBranchCell:
+            {
                 if (this.refs.length != 0) {
                     throw Error("PrunnedBranch special cell has a cell reference");
                 }
@@ -295,6 +296,7 @@ class Cell {
                 if (this.bits.length != (2 + hashes * (hash_bytes + depth_bytes)) * 8) {
                     throw Error("Not enouch data for a PrunnedBranch special cell");
                 }
+            }
             break;
         
             case Cell.LibraryCell:
@@ -304,6 +306,7 @@ class Cell {
             break;
 
             case Cell.MerkleProofCell:
+            {
                 if (this.bits.length != 8 + (hash_bytes + depth_bytes) * 8) {
                     throw Error("Not enouch data for a MerkleProof special cell");
                 }
@@ -320,9 +323,11 @@ class Cell {
                     throw Error("Depth mismatch in a MerkleProof special cell");
                 }
                 this.levelMask = this.refs[0].levelMask >> 1;
+            }
             break;
         
             case Cell.MerkleUpdateCell:
+            {
                 if (this.bits.length != 8 + (hash_bytes + depth_bytes) * 8 * 2) {
                     throw Error("Not enouch data for a MerkleUpdate special cell");
                 }
@@ -348,6 +353,7 @@ class Cell {
                     throw Error("Second depth mismatch in a MerkleUpdate special cell");
                 }
                 this.levelMask = (this.refs[0].levelMask | this.refs[1].levelMask) >> 1;
+            }
             break;
         
             default:
@@ -531,6 +537,7 @@ class Cell {
         const cellsIndex = allcells[2];
 
         let maxIndex = topologicalOrder.length;
+        // eslint-disable-next-line no-constant-condition
         while (true) {
             let changed = false;
             for (let hash in cellsIndex) {
@@ -549,7 +556,7 @@ class Cell {
                 break;
         }
         topologicalOrder.sort((a,b) => { return cellsIndex[a[0]][0]-cellsIndex[b[0]][0]; });
-        let i = 0;
+
         for (let i = 0; i < topologicalOrder.length; i++) {
             cellsIndex[topologicalOrder[i][0]] = i;
         }

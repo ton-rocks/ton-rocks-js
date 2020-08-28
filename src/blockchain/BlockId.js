@@ -1,7 +1,14 @@
 const {BN, compareBytes, bytesToBase64, base64ToBytes, concatBytes} = require("../utils");
 
-
+/**
+ * Block id class
+ */
 class BlockId {
+    /**
+     * Creates new BlockId object
+     * 
+     * @param {BlockId} o? Block id to copy from
+     */
     constructor(o) {
         if (o && o.file_hash) {
             if (typeof o.file_hash === 'string')
@@ -31,10 +38,21 @@ class BlockId {
         this.seqno = o && o.seqno ? o.seqno : 0;
     }
 
+    /**
+     * Clones BlockId object
+     * 
+     * @param {BlockId} b 
+     * @returns {BlockId}
+     */
     clone(b) {
         return new BlockId(b);
     }
 
+    /**
+     * Gets JSON string representation of BlockId
+     * 
+     * @returns {string}
+     */
     toString() {
         const b = {
             file_hash: bytesToBase64(new Uint8Array(this.file_hash.buffer)),
@@ -46,6 +64,11 @@ class BlockId {
         return JSON.stringify(b);
     }
 
+    /**
+     * Loads block id from JSON string
+     * 
+     * @param {string} s JSON representarion of BlockId 
+     */
     fromString(s) {
         const o = JSON.parse(s);
         this.file_hash = new Uint32Array(base64ToBytes(o.file_hash).buffer);
@@ -56,10 +79,20 @@ class BlockId {
         return this;
     }
 
+    /**
+     * Returns file hash in base64 format
+     * 
+     * @returns {string}
+     */
     filehashBase64() {
         return bytesToBase64(new Uint8Array(this.file_hash.buffer));
     }
 
+    /**
+     * Returns root hash in base64 format
+     * 
+     * @returns {string}
+     */
     roothashBase64() {
         return bytesToBase64(new Uint8Array(this.root_hash.buffer));
     }
@@ -100,6 +133,12 @@ class BlockId {
         return new BN(arr8, 10, 'le');
     }
 
+    /**
+     * Compares two blockIds
+     * 
+     * @param {BlockId} a BlockId to compare with
+     * @returns {boolean} True if same
+     */
     compare(a) {
         if (!a) return false;
         if (a.seqno !== this.seqno ||
@@ -111,11 +150,22 @@ class BlockId {
         return true;
     }
 
+    /**
+     * Compares two shards
+     * 
+     * @param {BN} a BlockId to compare with
+     * @returns {boolean} True if same
+     */
     compareShard(a) {
         if (!a) return false;
         return this.shard.cmp(a) === 0;
     }
 
+    /**
+     * Returns masterchain shard
+     * 
+     * @returns {BN}
+     */
     static shardMasterchain()  {
         return new BN("8000000000000000", 16);
     }

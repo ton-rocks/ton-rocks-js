@@ -5,7 +5,9 @@
   "main": "src/index.js",
   "scripts": {
     "test": "webpack-dev-server --config webpack.dev.js",
-    "build": "webpack --config webpack.prod.js"
+    "build": "webpack --config webpack.prod.js",
+    "lint": "eslint ./src",
+    "doc": "jsdoc ./src/*"
   },
   "keywords": [
     "TON",
@@ -46,11 +48,12 @@
     "xmlhttprequest": "^1.8.0"
   },
   "devDependencies": {
+    "copy-webpack-plugin": "^5.1.1",
+    "eslint": "^7.7.0",
     "webpack": "^4.42.1",
     "webpack-cli": "^3.3.12",
     "webpack-dev-server": "^3.11.0",
-    "webpack-merge": "^5.0.9",
-    "copy-webpack-plugin": "^5.1.1"
+    "webpack-merge": "^5.0.9"
   },
   "browser": {
     "crypto": false,

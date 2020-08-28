@@ -1,8 +1,7 @@
 const {TONClient, setWasmOptions} = require('ton-client-web-js');
-const {stringToBytes, bytesToString, bytesToBase64, base64ToBytes, bytesToHex, hexToBytes, nacl, BN} = require('../utils');
+const {stringToBytes, bytesToString, bytesToBase64, base64ToBytes, bytesToHex, BN} = require('../utils');
 const {Address, Cell} = require('../types');
 const {Block} = require('../blockchain/Block');
-const {BlockParser} = require('../blockchain/BlockParser');
 
 
 const AccountType =
@@ -692,6 +691,7 @@ class Contract {
       cycleTimeout = Math.floor((Date.now()  + this.config.runTimeout) / 1000);
 
 
+    // eslint-disable-next-line no-constant-condition
     while(true) {
 
       now = Math.floor(Date.now() / 1000);
@@ -734,6 +734,7 @@ class Contract {
         let pageLastTransHash = accountCurr.lastTransHash;
         let transactionTryCount = this.config.queryTryCount;
 
+        // eslint-disable-next-line no-constant-condition
         while (true) {
           let transRes = await this.block.getTransactions(10, this.address, pageLastTransLt, pageLastTransHash, currentLastTransLt);
           if (!transRes.ok || transRes.transactionList.length === 0) {

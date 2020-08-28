@@ -1,4 +1,4 @@
-const {BN, bytesToHex} = require("../utils");
+const {BN} = require("../utils");
 const {Cell} = require("./Cell");
 const {
     loadBit,
@@ -253,6 +253,7 @@ class HashmapE extends Hashmap {
     }
 
     deserialize(cell, t) {
+        // eslint-disable-next-line no-unused-vars
         loadMaybeRef(cell, t, (c,p) => this.loadHashmap(c, p, this.n, new BN(0)), (c,p) => {this.hash = c.getHash(0);});
     }
 
