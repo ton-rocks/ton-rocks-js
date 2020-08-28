@@ -104,4 +104,7 @@ async function testGiverGimme(address, amount)
 
         await (new Promise(resolve => setTimeout(resolve, 10000)));
     }
+
+    const smAccount = await sm.getAccount();
+    console.log('Giver balance:', TonRocks.utils.fromNano(smAccount.balance));
 }

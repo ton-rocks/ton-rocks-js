@@ -1,7 +1,7 @@
 {
-  "name": "tonrocks",
+  "name": "ton-rocks-js",
   "version": "0.1.0",
-  "description": "TonWeb - JavaScript API for TON (Telegram Open Network)",
+  "description": "Ton Rocks JS - JavaScript API for TON (Telegram Open Network)",
   "main": "src/index.js",
   "scripts": {
     "test": "webpack-dev-server --config webpack.dev.js",
@@ -32,10 +32,10 @@
   ],
   "license": "GPL-3.0",
   "bugs": {
-    "url": "https://github.com/ton-rocks/tonweb/issues"
+    "url": "https://github.com/ton-rocks/ton-rocks-js/issues"
   },
-  "homepage": "https://github.com/ton-rocks/tonweb#readme",
-  "repository": "https://github.com/ton-rocks/tonweb",
+  "homepage": "https://github.com/ton-rocks/ton-rocks-js#readme",
+  "repository": "https://github.com/ton-rocks/ton-rocks-js",
   "dependencies": {
     "bip39": "^3.0.2",
     "bn.js": "^5.1.1",
