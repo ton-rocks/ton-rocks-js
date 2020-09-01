@@ -7,7 +7,7 @@
     "test": "webpack-dev-server --config webpack.dev.js",
     "build": "webpack --config webpack.prod.js",
     "lint": "eslint ./src",
-    "doc": "jsdoc ./src/*"
+    "doc": "jsdoc ./src/* -d ./docs"
   },
   "keywords": [
     "TON",

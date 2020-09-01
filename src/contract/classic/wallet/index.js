@@ -1,5 +1,5 @@
 const {Address, Cell} = require("../../../types");
-const {BN, toNano, bytesToHex, hexToBytes, nacl, stringToBytes, bytesToBase64} = require("../../../utils");
+const {BN, bytesToHex, hexToBytes, nacl, stringToBytes, bytesToBase64} = require("../../../utils");
 const {ClassicContract} = require("../../ClassicContract.js");
 
 /**
@@ -7,37 +7,51 @@ const {ClassicContract} = require("../../ClassicContract.js");
  */
 class WalletContract extends ClassicContract {
     /**
-     * @param provider    {HttpProvider}
-     * @param options?    {{code: Uint8Array, publicKey?: Uint8Array, address?: Address | string, wc?: number}}
+     * @param {{code:(Uint8Array|undefined), address:(Address|string|undefined), wc:(number|undefined)}, keys:(Object|undefined), signCallback:(Function|undefined)} options
+     * @param {Object} provider 
+     * @param {Object} storage 
+     * @param {Object} client 
+     * @param {Object} config
      */
-    constructor(options, provider) {
-        //if (!options.publicKey && !options.address) throw new Error('WalletContract required publicKey or address in options')
-        super(options, provider);
+    constructor(options, provider, storage, client, config) {
+        super(options, provider, storage, client, config);
 
         this.methods = {
             /**
-             * @param   params {{secretKey: Uint8Array, toAddress: Address | string, amount: BN | number, seqno: number, payload: string | Uint8Array, sendMode: number}}
+             * New transfer object
+             * 
+             * @param {{keys:Object, toAddress:(Address|string), amount:(BN|number), seqno:number, payload:(string|Uint8Array), sendMode: number}} params 
+             * @returns {{getMessage:Function, estimateFee:Function, run:Function}}
              */
             transfer: (params) => {
 
                 const getMessage = async () => {
-                    const query = await this.createTransferMessage(this.keys.secretKey, params.toAddress, params.amount, params.seqno, params.payload, params.sendMode);
+                    const query = await this.createTransferMessage(params.toAddress, params.amount, params.seqno, params.payload, params.sendMode);
                     const res = {
                         messageBodyBase64: bytesToBase64(await query.message.toBoc(false)),
                         sign: query.sign,
-                        signed: query.signed
+                        signed: query.signed,
+                        hash: query.hash
                     }
                     return res;
                 }
 
                 return {
+                    /**
+                     * Gets message
+                     * 
+                     * @returns {Promise<Object>}
+                     */
                     getMessage: async () => {
                         return await getMessage();
                     },
-                    /*
-                    account
-                    emulateBalance
-                    */
+                    /**
+                     * Estimates fees
+                     * 
+                     * @throws {Error}
+                     * @param {{account:Account, emulateBalance:boolean}} p
+                     * @returns {Promise<Fees>}
+                     */
                     estimateFee: async (p = {}) => {
                         let account;
                         if (!p.account) {
@@ -55,10 +69,12 @@ class WalletContract extends ClassicContract {
                           emulateBalance: p.emulateBalance || false
                         });
                     },
-                    /*
-                    tryNum
-                    totalTimeout (UTC time in seconds)
-                    */
+                    /**
+                     * Runs method in network
+                     * 
+                     * @param {{tryNum:number, totalTimeout:number}} p
+                     * @returns {Promise<Object>}
+                     */
                     run: async (p = {}) => {
                       let res;
                       let tryNum = p.tryNum || 3;
@@ -78,9 +94,16 @@ class WalletContract extends ClassicContract {
                     },
                 }
             },
+            /**
+             * New seqno object
+             * 
+             * @returns {{runLocal:Function}}
+             */
             seqno: () => {
                 return {
                     /**
+                     * Runs seqno get method
+                     * 
                      * @return {Promise<number>}
                      */
                     runLocal: async (p={}) => {
@@ -108,7 +131,7 @@ class WalletContract extends ClassicContract {
     /**
      * @override
      * @private
-     * @param   seqno?   {number}
+     * @param {number} seqno 
      * @return {Cell}
      */
     createSigningMessage(seqno) {
@@ -119,17 +142,15 @@ class WalletContract extends ClassicContract {
     }
 
     /**
-     * @param secretKey {Uint8Array}  nacl.KeyPair.secretKey
-     * @param address   {Address | string}
-     * @param amount    {BN | number} in nanograms
-     * @param seqno {number}
-     * @param payload   {string | Uint8Array}
-     * @param sendMode?  {number}
-     * @param dummySignature?    {boolean}
-     * @return {Promise<{address: Address, signature: Uint8Array, message: Cell, cell: Cell, body: Cell, resultMessage: Cell}>}
+     * @param {Address | string} address
+     * @param {BN | number} amount in nanograms
+     * @param {number} seqno
+     * @param {string | Uint8Array} payload
+     * @param {number} sendMode
+     * @param {boolean} dummySignature  
+     * @return {Promise<{address: Address, signature: Uint8Array, message: Cell, cell: Cell, body: Cell, resultMessage: Cell, hash: string, sign: string, signed: boolean}>}
      */
     async createTransferMessage(
-        secretKey,
         address,
         amount,
         seqno,
@@ -168,7 +189,7 @@ class WalletContract extends ClassicContract {
             sign = new Uint8Array(64);
         }
         else if (externalSign) {
-            sign = params.signCallback('transfer', signingMessageHash, this.address, this.keys);
+            sign = this.signCallback('transfer', signingMessageHash, this.address, this.keys);
         }
         else {
             sign = nacl.sign.detached(signingMessageHash, this.keys.secretKey);
@@ -194,7 +215,7 @@ class WalletContract extends ClassicContract {
 
         if (dummySignature) {
             await resultMessage.finalizeTree();
-            res.sign = bytesToHex(resultMessage.getHash(0));
+            res.hash = bytesToHex(resultMessage.getHash(0));
             res.signed = false;
         }
         else {
@@ -208,41 +229,50 @@ class WalletContract extends ClassicContract {
 
 class SimpleWalletContract extends WalletContract {
     /**
-     * @param provider    {HttpProvider}
-     * @param options? {any}
+     * @param {{address:(Address|string|undefined), wc:(number|undefined)}, keys:(Object|undefined), signCallback:(Function|undefined)} options
+     * @param {Object} provider 
+     * @param {Object} storage 
+     * @param {Object} client 
+     * @param {Object} config
      */
-    constructor(options, provider) {
+    constructor(options, provider, storage, client, config) {
         options.code = hexToBytes("FF0020DDA4F260810200D71820D70B1FED44D0D31FD3FFD15112BAF2A122F901541044F910F2A2F80001D31F3120D74A96D307D402FB00DED1A4C8CB1FCBFFC9ED54");
-        super(options, provider);
+        super(options, provider, storage, client, config);
     }
 }
 
 class StandardWalletContract extends WalletContract {
     /**
-     * @param provider    {HttpProvider}
-     * @param options? {any}
+     * @param {{address:(Address|string|undefined), wc:(number|undefined)}, keys:(Object|undefined), signCallback:(Function|undefined)} options
+     * @param {Object} provider 
+     * @param {Object} storage 
+     * @param {Object} client 
+     * @param {Object} config
      */
-    constructor(options, provider) {
+    constructor(options, provider, storage, client, config) {
         options.code = hexToBytes("FF0020DD2082014C97BA9730ED44D0D70B1FE0A4F260810200D71820D70B1FED44D0D31FD3FFD15112BAF2A122F901541044F910F2A2F80001D31F3120D74A96D307D402FB00DED1A4C8CB1FCBFFC9ED54");
-        super(options, provider);
+        super(options, provider, storage, client, config);
     }
 }
 
 class WalletV3Contract extends WalletContract {
     /**
-     * @param provider    {HttpProvider}
-     * @param options? {any}
+     * @param {{address:(Address|string|undefined), wc:(number|undefined)}, keys:(Object|undefined), signCallback:(Function|undefined)} options
+     * @param {Object} provider 
+     * @param {Object} storage 
+     * @param {Object} client 
+     * @param {Object} config
      */
-    constructor(options, provider) {
+    constructor(options, provider, storage, client, config) {
         options.code = hexToBytes("FF0020DD2082014C97BA9730ED44D0D70B1FE0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED54");
         if (!options.walletId) options.walletId = 698983191;
-        super(options, provider);
+        super(options, provider, storage, client, config);
     }
 
     /**
      * @override
      * @private
-     * @param   seqno?   {number}
+     * @param {number} seqno 
      * @return {Cell}
      */
     createSigningMessage(seqno) {
@@ -276,21 +306,5 @@ class WalletV3Contract extends WalletContract {
     }
 }
 
-//There are two versions of standart wallet for now (14.01.2020):
-//simple-wallet-code.fc and wallet-code.fc (the one with seqno() method)
-class ClassicWallet {
-    /**
-     * @param provider    {HttpProvider}
-     */
-    constructor(provider) {
-        this.provider = provider;
-        this.all = {SimpleWalletContract, StandardWalletContract, WalletV3Contract};
-        this.default = WalletV3Contract;
-    }
-
-    create(options) {
-        return new this.default(this.provider, options);
-    }
-}
 
 module.exports = {SimpleWalletContract, StandardWalletContract, WalletV3Contract};

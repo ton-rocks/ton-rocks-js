@@ -1,4 +1,32 @@
-const {TONClient, setWasmOptions} = require('ton-client-web-js');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: contract/Contract.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: contract/Contract.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const {TONClient, setWasmOptions} = require('ton-client-web-js');
 const {stringToBytes, bytesToString, bytesToBase64, base64ToBytes, bytesToHex, BN, compareBytes} = require('../utils');
 const {Address, Cell} = require('../types');
 const {Block} = require('../blockchain/Block');
@@ -27,13 +55,13 @@ const TransactionType =
 }
 
 /**
- * BlockAPI raw abstract type    <br>
+ * BlockAPI raw abstract type    &lt;br>
  * 
- *   interface BlockObject {    <br>
- *    _: string;    <br>
- *    cell?: Cell;    <br>
- *    hash?: Uint8Array;      <br>
- *  }    <br>
+ *   interface BlockObject {    &lt;br>
+ *    _: string;    &lt;br>
+ *    cell?: Cell;    &lt;br>
+ *    hash?: Uint8Array;      &lt;br>
+ *  }    &lt;br>
  * 
  * @typedef {Object} BlockObject
  * @property {string} _ Object type string
@@ -42,21 +70,21 @@ const TransactionType =
  */
 
 /**
- * Account type    <br>
+ * Account type    &lt;br>
  * 
- *  interface Account {    <br>
- *    type: AccountType;    <br>
- *    code?: string; // base64    <br>
- *    data?: string; // base64    <br>
- *    balance: BN;    <br>
- *    balance_other?: any;    <br>
- *    id: string; // address in hex    <br>
- *    address: Address;    <br>
- *    state_hash?: Uint8Array;    <br>
- *    last_trans_id?: TransactionId;    <br>
- *    last_paid?: number;    <br>
- *    raw?: BlockObject;    <br>
- *  }    <br>
+ *  interface Account {    &lt;br>
+ *    type: AccountType;    &lt;br>
+ *    code?: string; // base64    &lt;br>
+ *    data?: string; // base64    &lt;br>
+ *    balance: BN;    &lt;br>
+ *    balance_other?: any;    &lt;br>
+ *    id: string; // address in hex    &lt;br>
+ *    address: Address;    &lt;br>
+ *    state_hash?: Uint8Array;    &lt;br>
+ *    last_trans_id?: TransactionId;    &lt;br>
+ *    last_paid?: number;    &lt;br>
+ *    raw?: BlockObject;    &lt;br>
+ *  }    &lt;br>
  * 
  * @typedef {Object} Account
  * @property {AccountType} type Account type
@@ -73,24 +101,24 @@ const TransactionType =
  */
 
 /**
- * Message type    <br>
+ * Message type    &lt;br>
  * 
- *  interface Message {    <br>
- *    raw: BlockObject;    <br>
- *    id: string; // hash in hex    <br>
- *    hash: Uint8Array;    <br>
- *    type: MessageType;    <br>
- *    src: Address;    <br>
- *    dst: Address;    <br>
- *    bounce?: bool;    <br>
- *    bounced?: bool;    <br>
- *    value?: BN;    <br>
- *    created_at?: number;    <br>
- *    created_lt?: BN;    <br>
- *    code?: string; // base64    <br>
- *    data?: string; // base64    <br>
- *    body?: string; // base64    <br>
- *  }    <br>
+ *  interface Message {    &lt;br>
+ *    raw: BlockObject;    &lt;br>
+ *    id: string; // hash in hex    &lt;br>
+ *    hash: Uint8Array;    &lt;br>
+ *    type: MessageType;    &lt;br>
+ *    src: Address;    &lt;br>
+ *    dst: Address;    &lt;br>
+ *    bounce?: bool;    &lt;br>
+ *    bounced?: bool;    &lt;br>
+ *    value?: BN;    &lt;br>
+ *    created_at?: number;    &lt;br>
+ *    created_lt?: BN;    &lt;br>
+ *    code?: string; // base64    &lt;br>
+ *    data?: string; // base64    &lt;br>
+ *    body?: string; // base64    &lt;br>
+ *  }    &lt;br>
  * 
  * @typedef {Object} Message
  * @property {BlockObject} raw MEssage in raw format
@@ -110,12 +138,12 @@ const TransactionType =
  */
 
 /**
- * Transaction id type    <br>
+ * Transaction id type    &lt;br>
  * 
- * interface TransactionId {    <br>
- *   lt: BN;    <br>
- *   hash: Uint8Array;    <br>
- * }    <br>
+ * interface TransactionId {    &lt;br>
+ *   lt: BN;    &lt;br>
+ *   hash: Uint8Array;    &lt;br>
+ * }    &lt;br>
  * 
  * @typedef {Object} TransactionId
  * @property {BN} lt Logical time
@@ -123,36 +151,36 @@ const TransactionType =
  */
 
 /**
- * Transaction type    <br>
+ * Transaction type    &lt;br>
  * 
- *  interface Transaction {    <br>
- *    id: string; // hash in hex    <br>
- *    hash: Uint8Array;    <br>
+ *  interface Transaction {    &lt;br>
+ *    id: string; // hash in hex    &lt;br>
+ *    hash: Uint8Array;    &lt;br>
  *    
- *    type: TransactionType;    <br>
+ *    type: TransactionType;    &lt;br>
  * 
- *    lt: BN;    <br>
- *    now: number;    <br>
- *    prev_trans_id: TransactionId;    <br>
- *    total_fees: BN;    <br>
+ *    lt: BN;    &lt;br>
+ *    now: number;    &lt;br>
+ *    prev_trans_id: TransactionId;    &lt;br>
+ *    total_fees: BN;    &lt;br>
  *    
- *    orig_status: AccountType;    <br>
- *    end_status: AccountType;    <br>
+ *    orig_status: AccountType;    &lt;br>
+ *    end_status: AccountType;    &lt;br>
  *    
- *    in_msg: Message;    <br>
- *    out_msgs: [Message];    <br>
+ *    in_msg: Message;    &lt;br>
+ *    out_msgs: [Message];    &lt;br>
  * 
- *    aborted?: bool;    <br>
- *    destroyed?: bool;    <br>
+ *    aborted?: bool;    &lt;br>
+ *    destroyed?: bool;    &lt;br>
  * 
- *    old_hash: Uint8Array;    <br>
- *    new_hash: Uint8Array;    <br>
+ *    old_hash: Uint8Array;    &lt;br>
+ *    new_hash: Uint8Array;    &lt;br>
  * 
- *    workchain_id: number;    <br>
- *    account_addr: Address;    <br>
- *    account_id: string; // address in hex    <br>
- *    block_id: BlockId;    <br>
- *  }    <br>
+ *    workchain_id: number;    &lt;br>
+ *    account_addr: Address;    &lt;br>
+ *    account_id: string; // address in hex    &lt;br>
+ *    block_id: BlockId;    &lt;br>
+ *  }    &lt;br>
  * 
  * @typedef {Object} Transaction
  * @property {string} id Representation hash in hex format
@@ -234,7 +262,7 @@ class Contract {
 
     this.bigBalance = '0x10000000000000';
 
-    this.config = config || {
+    this.config = config | {
       sendTryCount: 10,
       queryTryCount: 10,
       expireDefault: 10000,
@@ -277,10 +305,10 @@ class Contract {
    */
   async sendMessage(message) {
     let sendRes;
-    for (let j = 0; j < this.config.sendTryCount; j++) {
+    for (let j = 0; j &lt; this.config.sendTryCount; j++) {
       sendRes = await this.block.sendMessage(message.messageBodyBase64);
       //console.log('sendRes', sendRes);
-      if (sendRes && sendRes.ok)
+      if (sendRes &amp;&amp; sendRes.ok)
         break;
     }
     return sendRes;
@@ -308,7 +336,7 @@ class Contract {
       }
     }
     
-    for (let i = 0; i < this.config.queryTryCount; i++) {
+    for (let i = 0; i &lt; this.config.queryTryCount; i++) {
       let transRes = await this.block.getTransactions(limit,
                               this.address,
                               from.lt, from.hash,
@@ -333,12 +361,12 @@ class Contract {
    * Gets raw account state
    * 
    * @private
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), account:(Object|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined), lastTransHash:(Uint32Array|undefined), lastTransLt:(BN|undefined)}>} 
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), account:(Object|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined), lastTransHash:(Uint32Array|undefined), lastTransLt:(BN|undefined)}>} 
    */
   async _getAccount() {
     let account;
     let reason;
-    for (let i = 0; i < this.config.queryTryCount; i++) {
+    for (let i = 0; i &lt; this.config.queryTryCount; i++) {
       try {
         // get latest block
         const blockId = await this.block.getLatestId();
@@ -384,7 +412,7 @@ class Contract {
    * Gets account current state
    * 
    * @throws {Error}
-   * @returns {Promise<Account>}
+   * @returns {Promise&lt;Account>}
    */
   async getAccount() {
     if (!this.address) throw Error('no account address');
@@ -399,7 +427,7 @@ class Contract {
   /**
    * Gets account current state (without throw)
    * 
-   * @returns {Promise<{ok:boolean, reason:(string|undefined), account:(Account|undefined)}>}
+   * @returns {Promise&lt;{ok:boolean, reason:(string|undefined), account:(Account|undefined)}>}
    */
   async getAccountNoThrow() {
     try {
@@ -494,10 +522,10 @@ class Contract {
     if (incomplete)
       bodyCell.bits.writeBit(false);
     
-    for (let k = 0; k < len; k++) {
+    for (let k = 0; k &lt; len; k++) {
       bodyCell.bits.writeBit(body.cell.bits.get(body.current_pos + k));
     }
-    for (let k = 0; k < refs; k++) {
+    for (let k = 0; k &lt; refs; k++) {
       bodyCell.refs.push(body.cell.refs[body.current_ref + k]);
     }
 
@@ -691,7 +719,7 @@ class Contract {
   * @private
   * @throws {Error}
   * @param {{account:Account,address:Address, messageBodyBase64:string, emulateBalance:boolean}} params 
-  * @returns {Promise<Fees>}
+  * @returns {Promise&lt;Fees>}
   */
   async _estimateFee(params) {
     let account;
@@ -835,7 +863,7 @@ class Contract {
    * @param {Number} totalTimeout Timeout time (UTC time in seconds), 0 - send message, but do not wait for confirmation
    * @param {Function} checkMessageFunc Function for check message equivalence
    * @param {Function} saveMessageFunc Function for save message before send to network
-   * @returns {Promise<{ok:boolean, sended:boolean, confirmed:boolean}>} ok - is message was successfully transacted, sended - is message was sended to network, confirmed - is message status was confirmed
+   * @returns {Promise&lt;{ok:boolean, sended:boolean, confirmed:boolean}>} ok - is message was successfully transacted, sended - is message was sended to network, confirmed - is message status was confirmed
    */
   async _runMessage(message, accountPreState, totalTimeout, checkMessageFunc, saveMessageFunc) {
     
@@ -858,7 +886,7 @@ class Contract {
           reason: 'Account does not exist'
         };
       }
-      if(accountPreState !== undefined &&
+      if(accountPreState !== undefined &amp;&amp;
         accountPre.account.storage.state.state !== accountPreState) {
         return {
           ok: false,
@@ -878,7 +906,7 @@ class Contract {
     let currentLastTransHash = accountPre.lastTransHash;
     let currentShardBlockUtime = accountPre.blockHeader.info.gen_utime;
 
-    // ===! 2 stage - save message with latest lt & hash
+    // ===! 2 stage - save message with latest lt &amp; hash
 
     if (saveMessageFunc) {
       try {
@@ -897,7 +925,7 @@ class Contract {
 
     let now = Math.floor(Date.now() / 1000);
 
-    if (message.expire !== undefined && (now > message.expire || currentShardBlockUtime >= message.expire)) {
+    if (message.expire !== undefined &amp;&amp; (now > message.expire || currentShardBlockUtime >= message.expire)) {
       return {
         ok: false,
         sended: false,
@@ -917,7 +945,7 @@ class Contract {
     let accountCurr;
 
     let cycleTimeout;
-    if (message.expire === undefined && totalTimeout === undefined)
+    if (message.expire === undefined &amp;&amp; totalTimeout === undefined)
       cycleTimeout = Math.floor((Date.now()  + this.config.runTimeout) / 1000);
 
     // eslint-disable-next-line no-constant-condition
@@ -925,8 +953,8 @@ class Contract {
 
       now = Math.floor(Date.now() / 1000);
 
-      if ((cycleTimeout !== undefined && now > cycleTimeout) ||
-          (totalTimeout !== undefined && now > totalTimeout)) {
+      if ((cycleTimeout !== undefined &amp;&amp; now > cycleTimeout) ||
+          (totalTimeout !== undefined &amp;&amp; now > totalTimeout)) {
         return {
           ok: false,
           sended: true,
@@ -968,7 +996,7 @@ class Contract {
           let transRes = await this.block.getTransactions(10, this.address, pageLastTransLt, pageLastTransHash, currentLastTransLt);
           if (!transRes.ok || transRes.transactionList.length === 0) {
             transactionTryCount--;
-            if (transactionTryCount <= 0) {
+            if (transactionTryCount &lt;= 0) {
               return {
                 ok: false,
                 sended: true,
@@ -986,7 +1014,7 @@ class Contract {
           transactionTryCount = this.config.queryTryCount;
 
           // search for our message hash
-          for (let j = 0; j < transRes.transactionList.length; j++) {
+          for (let j = 0; j &lt; transRes.transactionList.length; j++) {
             const transaction = transRes.transactionList[j];
 
             //console.log('check transaction', transaction);
@@ -1051,7 +1079,7 @@ class Contract {
       currentLastTransHash = accountCurr.lastTransHash;
       currentShardBlockUtime = accountCurr.blockHeader.info.gen_utime;
 
-      if (message.expire !== undefined && currentShardBlockUtime > message.expire) {
+      if (message.expire !== undefined &amp;&amp; currentShardBlockUtime > message.expire) {
         return {
           ok: false,
           sended: true,
@@ -1075,7 +1103,7 @@ class Contract {
    * @param {BN} fromTransLt Last transaction logical time before message sended
    * @param {Uint8Array} fromTransHash Last transaction hash before message sended
    * @param {Function} checkMessageFunc Function for check message equivalence
-   * @returns {Promise<{ok:boolean, confirmed:boolean, delivered:boolean}>} ok - is query was successfull, confirmed - is message final status was confirmed, delivered - is message was transacted
+   * @returns {Promise&lt;{ok:boolean, confirmed:boolean, delivered:boolean}>} ok - is query was successfull, confirmed - is message final status was confirmed, delivered - is message was transacted
    */
   async checkMessageDelivery(message, fromTransLt, fromTransHash, checkMessageFunc) {
 
@@ -1100,7 +1128,7 @@ class Contract {
         let transRes = await this.block.getTransactions(10, this.address, pageLastTransLt, pageLastTransHash, fromTransLt);
         if (!transRes.ok || transRes.transactionList.length === 0) {
           transactionTryCount--;
-          if (transactionTryCount <= 0) {
+          if (transactionTryCount &lt;= 0) {
             return {
               ok: false,
               reason: 'Cannot get transaction list',
@@ -1113,7 +1141,7 @@ class Contract {
         transactionTryCount = this.config.queryTryCount;
 
         // search for our message hash
-        for (let j = 0; j < transRes.transactionList.length; j++) {
+        for (let j = 0; j &lt; transRes.transactionList.length; j++) {
           const transaction = transRes.transactionList[j];
 
           //console.log('check transaction', transaction);
@@ -1171,7 +1199,7 @@ class Contract {
     let currentLastTransHash = accountCurr.lastTransHash;
     let currentShardBlockUtime = accountCurr.blockHeader.info.gen_utime;
 
-    if (message.expire !== undefined && currentShardBlockUtime > message.expire) {
+    if (message.expire !== undefined &amp;&amp; currentShardBlockUtime > message.expire) {
       return {
         ok: true,
         delivered: false,
@@ -1198,7 +1226,7 @@ class Contract {
    * Get payload gell from string
    * 
    * @param {string} payload 
-   * @returns {Promise<string>} Payload BOC in base64 format
+   * @returns {Promise&lt;string>} Payload BOC in base64 format
    */
   async getPayloadFromString(payload) {
     const payloadCell = new Cell();
@@ -1219,17 +1247,17 @@ class Contract {
    * Gets string from payload
    * 
    * @param {string} payloadBase64 Payload BOC in base64 format
-   * @returns {Promise<string>} String from payload 
+   * @returns {Promise&lt;string>} String from payload 
    */
   async getStringFromPayload(payloadBase64) {
     const payloadCell = await Cell.fromBoc(base64ToBytes(payloadBase64));
 
-    if (payloadCell.bits.cursor < 32)
+    if (payloadCell.bits.cursor &lt; 32)
       return;
 
     const h = payloadCell.bits.readUint32(0);
     if (h === 0) {
-      if (payloadCell.bits.cursor < 40)
+      if (payloadCell.bits.cursor &lt; 40)
         return "";
 
       const strBytes = payloadCell.bits.getRange(32, payloadCell.bits.cursor - 32);
@@ -1240,4 +1268,26 @@ class Contract {
 }
 
 
-module.exports = {Contract};
+module.exports = {Contract};</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbiContract.html">AbiContract</a></li><li><a href="Address.html">Address</a></li><li><a href="BitString.html">BitString</a></li><li><a href="Block.html">Block</a></li><li><a href="BlockId.html">BlockId</a></li><li><a href="BlockParser.html">BlockParser</a></li><li><a href="BrowserStorage.html">BrowserStorage</a></li><li><a href="Cell.html">Cell</a></li><li><a href="ClassicContract.html">ClassicContract</a></li><li><a href="Contract.html">Contract</a></li><li><a href="Hashmap.html">Hashmap</a></li><li><a href="HashmapAug.html">HashmapAug</a></li><li><a href="HashmapAugE.html">HashmapAugE</a></li><li><a href="HashmapE.html">HashmapE</a></li><li><a href="LiteClient.html">LiteClient</a></li><li><a href="Storage.html">Storage</a></li></ul><h3>Global</h3><ul><li><a href="global.html#base64ToBytes">base64ToBytes</a></li><li><a href="global.html#base64toString">base64toString</a></li><li><a href="global.html#bytesToBase64">bytesToBase64</a></li><li><a href="global.html#bytesToBinString">bytesToBinString</a></li><li><a href="global.html#bytesToHex">bytesToHex</a></li><li><a href="global.html#bytesToString">bytesToString</a></li><li><a href="global.html#compareBytes">compareBytes</a></li><li><a href="global.html#concatBytes">concatBytes</a></li><li><a href="global.html#crc16">crc16</a></li><li><a href="global.html#crc32c">crc32c</a></li><li><a href="global.html#estimateFee">estimateFee</a></li><li><a href="global.html#fromNano">fromNano</a></li><li><a href="global.html#getAddress">getAddress</a></li><li><a href="global.html#getMessage">getMessage</a></li><li><a href="global.html#hexToBytes">hexToBytes</a></li><li><a href="global.html#loadAccount">loadAccount</a></li><li><a href="global.html#loadAccountBlock">loadAccountBlock</a></li><li><a href="global.html#loadAccountState">loadAccountState</a></li><li><a href="global.html#loadAccountStatus">loadAccountStatus</a></li><li><a href="global.html#loadAccountStorage">loadAccountStorage</a></li><li><a href="global.html#loadAccStatusChange">loadAccStatusChange</a></li><li><a href="global.html#loadAny">loadAny</a></li><li><a href="global.html#loadAnycast">loadAnycast</a></li><li><a href="global.html#loadBinTree">loadBinTree</a></li><li><a href="global.html#loadBit">loadBit</a></li><li><a href="global.html#loadBits">loadBits</a></li><li><a href="global.html#loadBlkMasterInfo">loadBlkMasterInfo</a></li><li><a href="global.html#loadBlkPrevInfo">loadBlkPrevInfo</a></li><li><a href="global.html#loadBlock">loadBlock</a></li><li><a href="global.html#loadBlockCreateFees">loadBlockCreateFees</a></li><li><a href="global.html#loadBlockCreateStats">loadBlockCreateStats</a></li><li><a href="global.html#loadBlockExtra">loadBlockExtra</a></li><li><a href="global.html#loadBlockIdExt">loadBlockIdExt</a></li><li><a href="global.html#loadBlockInfo">loadBlockInfo</a></li><li><a href="global.html#loadBlockLimits">loadBlockLimits</a></li><li><a href="global.html#loadBool">loadBool</a></li><li><a href="global.html#loadCatchainConfig">loadCatchainConfig</a></li><li><a href="global.html#loadCommonMsgInfo">loadCommonMsgInfo</a></li><li><a href="global.html#loadComplaintPricing">loadComplaintPricing</a></li><li><a href="global.html#loadComputeSkipReason">loadComputeSkipReason</a></li><li><a href="global.html#loadConfigParam">loadConfigParam</a></li><li><a href="global.html#loadConfigParam0">loadConfigParam0</a></li><li><a href="global.html#loadConfigParam1">loadConfigParam1</a></li><li><a href="global.html#loadConfigParam2">loadConfigParam2</a></li><li><a href="global.html#loadConfigParam3">loadConfigParam3</a></li><li><a href="global.html#loadConfigParam4">loadConfigParam4</a></li><li><a href="global.html#loadConfigParam6">loadConfigParam6</a></li><li><a href="global.html#loadConfigParam7">loadConfigParam7</a></li><li><a href="global.html#loadConfigParam8">loadConfigParam8</a></li><li><a href="global.html#loadConfigParam9">loadConfigParam9</a></li><li><a href="global.html#loadConfigParam10">loadConfigParam10</a></li><li><a href="global.html#loadConfigParam11">loadConfigParam11</a></li><li><a href="global.html#loadConfigParam12">loadConfigParam12</a></li><li><a href="global.html#loadConfigParam13">loadConfigParam13</a></li><li><a href="global.html#loadConfigParam14">loadConfigParam14</a></li><li><a href="global.html#loadConfigParam15">loadConfigParam15</a></li><li><a href="global.html#loadConfigParam16">loadConfigParam16</a></li><li><a href="global.html#loadConfigParam17">loadConfigParam17</a></li><li><a href="global.html#loadConfigParam18">loadConfigParam18</a></li><li><a href="global.html#loadConfigParam20">loadConfigParam20</a></li><li><a href="global.html#loadConfigParam21">loadConfigParam21</a></li><li><a href="global.html#loadConfigParam22">loadConfigParam22</a></li><li><a href="global.html#loadConfigParam23">loadConfigParam23</a></li><li><a href="global.html#loadConfigParam24">loadConfigParam24</a></li><li><a href="global.html#loadConfigParam25">loadConfigParam25</a></li><li><a href="global.html#loadConfigParam28">loadConfigParam28</a></li><li><a href="global.html#loadConfigParam29">loadConfigParam29</a></li><li><a href="global.html#loadConfigParam31">loadConfigParam31</a></li><li><a href="global.html#loadConfigParam32">loadConfigParam32</a></li><li><a href="global.html#loadConfigParam33">loadConfigParam33</a></li><li><a href="global.html#loadConfigParam34">loadConfigParam34</a></li><li><a href="global.html#loadConfigParam35">loadConfigParam35</a></li><li><a href="global.html#loadConfigParam36">loadConfigParam36</a></li><li><a href="global.html#loadConfigParam37">loadConfigParam37</a></li><li><a href="global.html#loadConfigParams">loadConfigParams</a></li><li><a href="global.html#loadConfigProposalSetup">loadConfigProposalSetup</a></li><li><a href="global.html#loadConfigVotingSetup">loadConfigVotingSetup</a></li><li><a href="global.html#loadConsensusConfig">loadConsensusConfig</a></li><li><a href="global.html#loadCounters">loadCounters</a></li><li><a href="global.html#loadCreatorStats">loadCreatorStats</a></li><li><a href="global.html#loadCryptoSignature">loadCryptoSignature</a></li><li><a href="global.html#loadCryptoSignaturePair">loadCryptoSignaturePair</a></li><li><a href="global.html#loadCurrencyCollection">loadCurrencyCollection</a></li><li><a href="global.html#loadDepthBalanceInfo">loadDepthBalanceInfo</a></li><li><a href="global.html#loadEither">loadEither</a></li><li><a href="global.html#loadExtBlkRef">loadExtBlkRef</a></li><li><a href="global.html#loadExtraCurrencyCollection">loadExtraCurrencyCollection</a></li><li><a href="global.html#loadFutureSplitMerge">loadFutureSplitMerge</a></li><li><a href="global.html#loadGasLimitsPrices">loadGasLimitsPrices</a></li><li><a href="global.html#loadGlobalVersion">loadGlobalVersion</a></li><li><a href="global.html#loadGrams">loadGrams</a></li><li><a href="global.html#loadHASH_UPDATE">loadHASH_UPDATE</a></li><li><a href="global.html#loadHashmap">loadHashmap</a></li><li><a href="global.html#loadHashmapAug">loadHashmapAug</a></li><li><a href="global.html#loadHashmapAugE">loadHashmapAugE</a></li><li><a href="global.html#loadHashmapE">loadHashmapE</a></li><li><a href="global.html#loadInt8">loadInt8</a></li><li><a href="global.html#loadInt16">loadInt16</a></li><li><a href="global.html#loadInt32">loadInt32</a></li><li><a href="global.html#loadKeyExtBlkRef">loadKeyExtBlkRef</a></li><li><a href="global.html#loadKeyMaxLt">loadKeyMaxLt</a></li><li><a href="global.html#loadMaybe">loadMaybe</a></li><li><a href="global.html#loadMaybeRef">loadMaybeRef</a></li><li><a href="global.html#loadMcBlockExtra">loadMcBlockExtra</a></li><li><a href="global.html#loadMcStateExtra">loadMcStateExtra</a></li><li><a href="global.html#loadMERKLE_UPDATE">loadMERKLE_UPDATE</a></li><li><a href="global.html#loadMessage">loadMessage</a></li><li><a href="global.html#loadMsgAddressExt">loadMsgAddressExt</a></li><li><a href="global.html#loadMsgAddressInt">loadMsgAddressInt</a></li><li><a href="global.html#loadMsgForwardPrices">loadMsgForwardPrices</a></li><li><a href="global.html#loadOldMcBlocksInfo">loadOldMcBlocksInfo</a></li><li><a href="global.html#loadParamLimits">loadParamLimits</a></li><li><a href="global.html#loadRefIfExist">loadRefIfExist</a></li><li><a href="global.html#loadShardAccount">loadShardAccount</a></li><li><a href="global.html#loadShardAccountBlocks">loadShardAccountBlocks</a></li><li><a href="global.html#loadShardAccounts">loadShardAccounts</a></li><li><a href="global.html#loadShardDescr">loadShardDescr</a></li><li><a href="global.html#loadShardFeeCreated">loadShardFeeCreated</a></li><li><a href="global.html#loadShardFees">loadShardFees</a></li><li><a href="global.html#loadShardHashes">loadShardHashes</a></li><li><a href="global.html#loadShardIdent">loadShardIdent</a></li><li><a href="global.html#loadShardStateUnsplit">loadShardStateUnsplit</a></li><li><a href="global.html#loadSigPubKey">loadSigPubKey</a></li><li><a href="global.html#loadStateInit">loadStateInit</a></li><li><a href="global.html#loadStorageInfo">loadStorageInfo</a></li><li><a href="global.html#loadStoragePrices">loadStoragePrices</a></li><li><a href="global.html#loadStorageUsed">loadStorageUsed</a></li><li><a href="global.html#loadStorageUsedShort">loadStorageUsedShort</a></li><li><a href="global.html#loadTickTock">loadTickTock</a></li><li><a href="global.html#loadTrActionPhase">loadTrActionPhase</a></li><li><a href="global.html#loadTransaction">loadTransaction</a></li><li><a href="global.html#loadTransactionDescr">loadTransactionDescr</a></li><li><a href="global.html#loadTrBouncePhase">loadTrBouncePhase</a></li><li><a href="global.html#loadTrComputePhase">loadTrComputePhase</a></li><li><a href="global.html#loadTrCreditPhase">loadTrCreditPhase</a></li><li><a href="global.html#loadTrStoragePhase">loadTrStoragePhase</a></li><li><a href="global.html#loadUint">loadUint</a></li><li><a href="global.html#loadUint8">loadUint8</a></li><li><a href="global.html#loadUint16">loadUint16</a></li><li><a href="global.html#loadUint32">loadUint32</a></li><li><a href="global.html#loadUint64">loadUint64</a></li><li><a href="global.html#loadUintLeq">loadUintLeq</a></li><li><a href="global.html#loadUintLess">loadUintLess</a></li><li><a href="global.html#loadValidatorDescr">loadValidatorDescr</a></li><li><a href="global.html#loadValidatorInfo">loadValidatorInfo</a></li><li><a href="global.html#loadValidatorSet">loadValidatorSet</a></li><li><a href="global.html#loadValueFlow">loadValueFlow</a></li><li><a href="global.html#loadVarUInteger">loadVarUInteger</a></li><li><a href="global.html#loadWorkchainDescr">loadWorkchainDescr</a></li><li><a href="global.html#loadWorkchainFormat1">loadWorkchainFormat1</a></li><li><a href="global.html#readNBytesUIntFromArray">readNBytesUIntFromArray</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runLocal">runLocal</a></li><li><a href="global.html#sha256">sha256</a></li><li><a href="global.html#sha512">sha512</a></li><li><a href="global.html#stringToArray">stringToArray</a></li><li><a href="global.html#stringToBase64">stringToBase64</a></li><li><a href="global.html#stringToBytes">stringToBytes</a></li><li><a href="global.html#toNano">toNano</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.5</a> on Tue Sep 01 2020 21:46:48 GMT+0300 (Moscow Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

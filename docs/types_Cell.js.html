@@ -1,4 +1,32 @@
-const {BitString} = require("./BitString");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: types/Cell.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: types/Cell.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const {BitString} = require("./BitString");
 const {bytesToBase64, compareBytes, concatBytes, crc32c, hexToBytes, bytesToHex, readNBytesUIntFromArray, sha256} = require("../utils");
 
 const reachBocMagicPrefix = hexToBytes('B5EE9C72');
@@ -41,7 +69,7 @@ class Cell {
      * @returns {number}
      */
     getLevelFromMask(mask) {
-        for (let i = 0; i <= 3; i++) {
+        for (let i = 0; i &lt;= 3; i++) {
             if (!mask) {
                 return i;
             }
@@ -56,8 +84,8 @@ class Cell {
      */
     getHashesCountFromMask(mask) {
         let n = 0;
-        for (let i = 0; i < 3; i++) {
-            n += (mask & 1);
+        for (let i = 0; i &lt; 3; i++) {
+            n += (mask &amp; 1);
             mask = mask >> 1;
         }
         return n+1; // 1 repr + up to 3 higher hashes
@@ -68,7 +96,7 @@ class Cell {
      * @returns {number}
      */
     getLevel() {
-        return this.getLevelFromMask(this.levelMask & 7);
+        return this.getLevelFromMask(this.levelMask &amp; 7);
     }
 
     /**
@@ -76,7 +104,7 @@ class Cell {
      * @returns {number}
      */
     getHashesCount() {
-        return this.getHashesCountFromMask(this.levelMask & 7)
+        return this.getHashesCountFromMask(this.levelMask &amp; 7)
     }
 
     /**
@@ -93,7 +121,7 @@ class Cell {
      * @returns {number}
      */
     applyLevelMask(level) {
-        return (this.levelMask & ((1 << level) - 1));
+        return (this.levelMask &amp; ((1 &lt;&lt; level) - 1));
     }
 
     /**
@@ -122,7 +150,7 @@ class Cell {
      * @returns {number}
      */
     getLevelMask() {
-        if (this.isExotic && this.type != Cell.LibraryCell) {
+        if (this.isExotic &amp;&amp; this.type != Cell.LibraryCell) {
             switch (this.type) {
                 case Cell.PrunnedBranchCell:
                     // set it manually 
@@ -269,7 +297,7 @@ class Cell {
     /**
      * @private
      * @deprecated
-     * @returns {Promise<Uint8Array>}
+     * @returns {Promise&lt;Uint8Array>}
      */
     async getRepr() {
         const reprArray = [];
@@ -312,7 +340,7 @@ class Cell {
     async finalize() {
         let type = Cell.OrdinaryCell;
         if (this.isExotic) {
-            if (this.bits.length < 8) {
+            if (this.bits.length &lt; 8) {
                 throw Error("Not enough data for a special cell");
             }
             type = this.bits.readUint8(0);
@@ -335,7 +363,7 @@ class Cell {
                 if (this.refs.length != 0) {
                     throw Error("PrunnedBranch special cell has a cell reference");
                 }
-                if (this.bits.length < 16) {
+                if (this.bits.length &lt; 16) {
                     throw Error("Not enough data for a PrunnedBranch special cell");
                 }
                 this.levelMask = this.bits.readUint8(8);
@@ -420,17 +448,17 @@ class Cell {
 
         this.hashes = [];
         this.depth = [];
-        for (let i = 0; i < hash_count; i++) {
+        for (let i = 0; i &lt; hash_count; i++) {
             this.hashes.push(null);
             this.depth.push(0);
         }
 
-        for (let level_i = 0, hash_i = 0, level = this.getLevel(); level_i <= level; level_i++) {
+        for (let level_i = 0, hash_i = 0, level = this.getLevel(); level_i &lt;= level; level_i++) {
             if (!this.isLevelSignificant(level_i)) {
                 continue;
             }
 
-            if (hash_i < hash_i_offset) {
+            if (hash_i &lt; hash_i_offset) {
                 hash_i++;
                 continue;
             }
@@ -449,7 +477,7 @@ class Cell {
             if (hash_i == hash_i_offset) {
                 //debug_log("add to hash data len", (this.bits.length + 7) >> 3);
 
-                if (level_i != 0 && type != Cell.PrunnedBranchCell)
+                if (level_i != 0 &amp;&amp; type != Cell.PrunnedBranchCell)
                     throw Error("Cannot deserialize cell");
 
                 repr = concatBytes(repr, this.bits.getTopUppedArray());
@@ -490,7 +518,7 @@ class Cell {
 
             //debug_log("add to hash " + this.refs.length + " childs");
             // children hash
-            for (let i = 0; i < this.refs.length; i++) {
+            for (let i = 0; i &lt; this.refs.length; i++) {
               if (type == Cell.MerkleProofCell || type == Cell.MerkleUpdateCell) {
                 //debug_log("child type " + type + " lvl " + (level_i + 1) + " hash", bytesToHex(this.refs[i].getHash(level_i + 1)));
                 repr = concatBytes(repr, this.refs[i].getHash(level_i + 1));
@@ -506,7 +534,7 @@ class Cell {
             hash_i++;
         }
         //debug_log("cell hashes", total_hash_count);
-        //for (let i = 0; i < total_hash_count; i++) {
+        //for (let i = 0; i &lt; total_hash_count; i++) {
         //    debug_log("- %s\n", bytesToHex(this.getHash(i)));
         //}
     }
@@ -514,7 +542,7 @@ class Cell {
 
     /**
      * @deprecated
-     * @returns {Promise<Uint8Array>}
+     * @returns {Promise&lt;Uint8Array>}
      */
     async hash() {
         return new Uint8Array(
@@ -569,27 +597,27 @@ class Cell {
     }
 
     /**
-     * Creates BOC bytearray from cell tree  <br>
+     * Creates BOC bytearray from cell tree  &lt;br>
      * 
-     * serialized_boc#b5ee9c72 has_idx:(## 1) has_crc32c:(## 1) <br>
-     *   has_cache_bits:(## 1) flags:(## 2) { flags = 0 } <br>
-     *   size:(## 3) { size <= 4 } <br>
-     *   off_bytes:(## 8) { off_bytes <= 8 } <br>
-     *   cells:(##(size * 8)) <br>
-     *   roots:(##(size * 8)) { roots >= 1 } <br>
-     *   absent:(##(size * 8)) { roots + absent <= cells } <br>
-     *   tot_cells_size:(##(off_bytes * 8)) <br>
-     *   root_list:(roots * ##(size * 8)) <br>
-     *   index:has_idx?(cells * ##(off_bytes * 8)) <br>
-     *   cell_data:(tot_cells_size * [ uint8 ]) <br>
-     *   crc32c:has_crc32c?uint32 <br>
-     *  = BagOfCells; <br>
+     * serialized_boc#b5ee9c72 has_idx:(## 1) has_crc32c:(## 1) &lt;br>
+     *   has_cache_bits:(## 1) flags:(## 2) { flags = 0 } &lt;br>
+     *   size:(## 3) { size &lt;= 4 } &lt;br>
+     *   off_bytes:(## 8) { off_bytes &lt;= 8 } &lt;br>
+     *   cells:(##(size * 8)) &lt;br>
+     *   roots:(##(size * 8)) { roots >= 1 } &lt;br>
+     *   absent:(##(size * 8)) { roots + absent &lt;= cells } &lt;br>
+     *   tot_cells_size:(##(off_bytes * 8)) &lt;br>
+     *   root_list:(roots * ##(size * 8)) &lt;br>
+     *   index:has_idx?(cells * ##(off_bytes * 8)) &lt;br>
+     *   cell_data:(tot_cells_size * [ uint8 ]) &lt;br>
+     *   crc32c:has_crc32c?uint32 &lt;br>
+     *  = BagOfCells; &lt;br>
      * 
      * @param {boolean} has_idx? Include cell index
      * @param {boolean} hash_crc32? Inclide crc32 checksum
      * @param {boolean} has_cache_bits? Cache bits value
      * @param {number} flags? Flags value
-     * @returns {Promise<Uint8Array>}
+     * @returns {Promise&lt;Uint8Array>}
      */
     async toBoc(has_idx = true, hash_crc32 = true, has_cache_bits = false, flags = 0) {
         const root_cell = this;
@@ -607,7 +635,7 @@ class Cell {
                 let cellIndex = cell[0];
                 let childHashList = cell[2];
                 for (let child in childHashList) {
-                    if (cellsIndex[childHashList[child]][0] <= cellIndex) {
+                    if (cellsIndex[childHashList[child]][0] &lt;= cellIndex) {
                         cellsIndex[childHashList[child]][0] = maxIndex;
                         maxIndex++;
                         changed = true;
@@ -619,7 +647,7 @@ class Cell {
         }
         topologicalOrder.sort((a,b) => { return cellsIndex[a[0]][0]-cellsIndex[b[0]][0]; });
 
-        for (let i = 0; i < topologicalOrder.length; i++) {
+        for (let i = 0; i &lt; topologicalOrder.length; i++) {
             cellsIndex[topologicalOrder[i][0]] = i;
         }
 
@@ -667,7 +695,7 @@ class Cell {
      * @private
      * @param cellsIndex
      * @param refSize
-     * @returns {Promise<Uint8Array>}
+     * @returns {Promise&lt;Uint8Array>}
      */
     // eslint-disable-next-line no-unused-vars
     serializeForBoc(cellsIndex, refSize) {
@@ -700,7 +728,7 @@ class Cell {
      * @private
      * @param cellsIndex
      * @param refSize
-     * @returns {Promise<number>}
+     * @returns {Promise&lt;number>}
      */
     bocSerializationSize(cellsIndex, refSize) {
         return this.serializeForBoc(cellsIndex, refSize).length;
@@ -752,7 +780,7 @@ function treeWalk(cell, topologicalOrderArray, indexHashmap) {
  */
 function parseBocHeader(serializedBoc) {
     // snake_case is used to match TON docs
-    if (serializedBoc.length < 4 + 1)
+    if (serializedBoc.length &lt; 4 + 1)
         throw Error("Not enough bytes for magic prefix");
     const inputData = serializedBoc; // Save copy for crc32
     const prefix = serializedBoc.slice(0, 4);
@@ -760,10 +788,10 @@ function parseBocHeader(serializedBoc) {
     let has_idx, hash_crc32, has_cache_bits, flags, size_bytes;
     if (compareBytes(prefix, reachBocMagicPrefix)) {
         const flags_byte = serializedBoc[0];
-        has_idx = flags_byte & 128;
-        hash_crc32 = flags_byte & 64;
-        has_cache_bits = flags_byte & 32;
-        flags = (flags_byte & 16) * 2 + (flags_byte & 8);
+        has_idx = flags_byte &amp; 128;
+        hash_crc32 = flags_byte &amp; 64;
+        has_cache_bits = flags_byte &amp; 32;
+        flags = (flags_byte &amp; 16) * 2 + (flags_byte &amp; 8);
         size_bytes = flags_byte % 8;
     }
     if (compareBytes(prefix, leanBocMagicPrefix)) {
@@ -781,7 +809,7 @@ function parseBocHeader(serializedBoc) {
         size_bytes = serializedBoc[0];
     }
     serializedBoc = serializedBoc.slice(1);
-    if (serializedBoc.length < 1 + 5 * size_bytes)
+    if (serializedBoc.length &lt; 1 + 5 * size_bytes)
         throw Error("Not enough bytes for encoding cells counters");
     const offset_bytes = serializedBoc[0];
     serializedBoc = serializedBoc.slice(1);
@@ -793,30 +821,30 @@ function parseBocHeader(serializedBoc) {
     serializedBoc = serializedBoc.slice(size_bytes);
     const tot_cells_size = readNBytesUIntFromArray(offset_bytes, serializedBoc);
     serializedBoc = serializedBoc.slice(offset_bytes);
-    if (serializedBoc.length < roots_num * size_bytes)
+    if (serializedBoc.length &lt; roots_num * size_bytes)
         throw Error("Not enough bytes for encoding root cells hashes");
     let root_list = [];
-    for (let c = 0; c < roots_num; c++) {
+    for (let c = 0; c &lt; roots_num; c++) {
         root_list.push(readNBytesUIntFromArray(size_bytes, serializedBoc));
         serializedBoc = serializedBoc.slice(size_bytes);
     }
     let index = false;
     if (has_idx) {
         index = [];
-        if (serializedBoc.length < offset_bytes * cells_num)
+        if (serializedBoc.length &lt; offset_bytes * cells_num)
             throw Error("Not enough bytes for index encoding");
-        for (let c = 0; c < cells_num; c++) {
+        for (let c = 0; c &lt; cells_num; c++) {
             index.push(readNBytesUIntFromArray(offset_bytes, serializedBoc));
             serializedBoc = serializedBoc.slice(offset_bytes);
         }
     }
 
-    if (serializedBoc.length < tot_cells_size)
+    if (serializedBoc.length &lt; tot_cells_size)
         throw Error("Not enough bytes for cells data");
     const cells_data = serializedBoc.slice(0, tot_cells_size);
     serializedBoc = serializedBoc.slice(tot_cells_size);
     if (hash_crc32) {
-        if (serializedBoc.length < 4)
+        if (serializedBoc.length &lt; 4)
             throw Error("Not enough bytes for crc32c hashsum");
         const length = inputData.length;
         if (!compareBytes(crc32c(inputData.slice(0, length - 4)), serializedBoc.slice(0, 4)))
@@ -840,34 +868,34 @@ function parseBocHeader(serializedBoc) {
  * @param {*} referenceIndexSize 
  */
 function deserializeCellData(cellData, referenceIndexSize) {
-    if (cellData.length < 2)
+    if (cellData.length &lt; 2)
         throw Error("Not enough bytes to encode cell descriptors");
 
     const d1 = cellData[0], d2 = cellData[1];
     cellData = cellData.slice(2);
 
-    const refNum = d1 & 7;
+    const refNum = d1 &amp; 7;
 
     if (refNum > 4) {
         throw Error("Cannot deserialize absent cell");
     }
 
-    const dataByteSize = (d2 >> 1) + (d2 & 1);
-    const fullfilledBytes = (d2 & 1) == 0;
+    const dataByteSize = (d2 >> 1) + (d2 &amp; 1);
+    const fullfilledBytes = (d2 &amp; 1) == 0;
 
     let cell = new Cell();
 
     cell.levelMask = d1 >> 5;
-    cell.isExotic = (d1 & 8) != 0;
-    cell.hasHashes = (d1 & 16) != 0;
+    cell.isExotic = (d1 &amp; 8) != 0;
+    cell.hasHashes = (d1 &amp; 16) != 0;
 
     const hashesSize = cell.hasHashes ? cell.getHashesCount() * hash_bytes : 0;
     const depthSize = cell.hasHashes ? cell.getHashesCount() * 2 : 0;
 
-    if (cellData.length < hashesSize + depthSize + dataByteSize + referenceIndexSize * refNum)
+    if (cellData.length &lt; hashesSize + depthSize + dataByteSize + referenceIndexSize * refNum)
         throw Error("Not enough bytes to encode cell data");
 
-    // skip hashes & depth
+    // skip hashes &amp; depth
     cellData = cellData.slice(hashesSize);
     cellData = cellData.slice(depthSize);
 
@@ -876,7 +904,7 @@ function deserializeCellData(cellData, referenceIndexSize) {
     cellData = cellData.slice(dataByteSize);
 
     // load refs
-    for (let r = 0; r < refNum; r++) {
+    for (let r = 0; r &lt; refNum; r++) {
         cell.refs.push(readNBytesUIntFromArray(referenceIndexSize, cellData));
         cellData = cellData.slice(referenceIndexSize);
     }
@@ -898,16 +926,16 @@ async function deserializeBoc(serializedBoc) {
     const header = parseBocHeader(serializedBoc);
     let cells_data = header.cells_data;
     let cells_array = [];
-    for (let ci = 0; ci < header.cells_num; ci++) {
+    for (let ci = 0; ci &lt; header.cells_num; ci++) {
         let dd = deserializeCellData(cells_data, header.size_bytes);
         cells_data = dd.residue;
         cells_array.push(dd.cell);
     }
     for (let ci = header.cells_num - 1; ci >= 0; ci--) {
         let c = cells_array[ci];
-        for (let ri = 0; ri < c.refs.length; ri++) {
+        for (let ri = 0; ri &lt; c.refs.length; ri++) {
             const r = c.refs[ri];
-            if (r < ci) {
+            if (r &lt; ci) {
                 throw Error("Topological order is broken");
             }
             c.refs[ri] = cells_array[r];
@@ -921,4 +949,26 @@ async function deserializeBoc(serializedBoc) {
     return root_cells;
 }
 
-module.exports = {Cell};
+module.exports = {Cell};</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbiContract.html">AbiContract</a></li><li><a href="Address.html">Address</a></li><li><a href="BitString.html">BitString</a></li><li><a href="Block.html">Block</a></li><li><a href="BlockId.html">BlockId</a></li><li><a href="BlockParser.html">BlockParser</a></li><li><a href="BrowserStorage.html">BrowserStorage</a></li><li><a href="Cell.html">Cell</a></li><li><a href="ClassicContract.html">ClassicContract</a></li><li><a href="Contract.html">Contract</a></li><li><a href="Hashmap.html">Hashmap</a></li><li><a href="HashmapAug.html">HashmapAug</a></li><li><a href="HashmapAugE.html">HashmapAugE</a></li><li><a href="HashmapE.html">HashmapE</a></li><li><a href="LiteClient.html">LiteClient</a></li><li><a href="Storage.html">Storage</a></li></ul><h3>Global</h3><ul><li><a href="global.html#base64ToBytes">base64ToBytes</a></li><li><a href="global.html#base64toString">base64toString</a></li><li><a href="global.html#bytesToBase64">bytesToBase64</a></li><li><a href="global.html#bytesToBinString">bytesToBinString</a></li><li><a href="global.html#bytesToHex">bytesToHex</a></li><li><a href="global.html#bytesToString">bytesToString</a></li><li><a href="global.html#compareBytes">compareBytes</a></li><li><a href="global.html#concatBytes">concatBytes</a></li><li><a href="global.html#crc16">crc16</a></li><li><a href="global.html#crc32c">crc32c</a></li><li><a href="global.html#estimateFee">estimateFee</a></li><li><a href="global.html#fromNano">fromNano</a></li><li><a href="global.html#getAddress">getAddress</a></li><li><a href="global.html#getMessage">getMessage</a></li><li><a href="global.html#hexToBytes">hexToBytes</a></li><li><a href="global.html#loadAccount">loadAccount</a></li><li><a href="global.html#loadAccountBlock">loadAccountBlock</a></li><li><a href="global.html#loadAccountState">loadAccountState</a></li><li><a href="global.html#loadAccountStatus">loadAccountStatus</a></li><li><a href="global.html#loadAccountStorage">loadAccountStorage</a></li><li><a href="global.html#loadAccStatusChange">loadAccStatusChange</a></li><li><a href="global.html#loadAny">loadAny</a></li><li><a href="global.html#loadAnycast">loadAnycast</a></li><li><a href="global.html#loadBinTree">loadBinTree</a></li><li><a href="global.html#loadBit">loadBit</a></li><li><a href="global.html#loadBits">loadBits</a></li><li><a href="global.html#loadBlkMasterInfo">loadBlkMasterInfo</a></li><li><a href="global.html#loadBlkPrevInfo">loadBlkPrevInfo</a></li><li><a href="global.html#loadBlock">loadBlock</a></li><li><a href="global.html#loadBlockCreateFees">loadBlockCreateFees</a></li><li><a href="global.html#loadBlockCreateStats">loadBlockCreateStats</a></li><li><a href="global.html#loadBlockExtra">loadBlockExtra</a></li><li><a href="global.html#loadBlockIdExt">loadBlockIdExt</a></li><li><a href="global.html#loadBlockInfo">loadBlockInfo</a></li><li><a href="global.html#loadBlockLimits">loadBlockLimits</a></li><li><a href="global.html#loadBool">loadBool</a></li><li><a href="global.html#loadCatchainConfig">loadCatchainConfig</a></li><li><a href="global.html#loadCommonMsgInfo">loadCommonMsgInfo</a></li><li><a href="global.html#loadComplaintPricing">loadComplaintPricing</a></li><li><a href="global.html#loadComputeSkipReason">loadComputeSkipReason</a></li><li><a href="global.html#loadConfigParam">loadConfigParam</a></li><li><a href="global.html#loadConfigParam0">loadConfigParam0</a></li><li><a href="global.html#loadConfigParam1">loadConfigParam1</a></li><li><a href="global.html#loadConfigParam2">loadConfigParam2</a></li><li><a href="global.html#loadConfigParam3">loadConfigParam3</a></li><li><a href="global.html#loadConfigParam4">loadConfigParam4</a></li><li><a href="global.html#loadConfigParam6">loadConfigParam6</a></li><li><a href="global.html#loadConfigParam7">loadConfigParam7</a></li><li><a href="global.html#loadConfigParam8">loadConfigParam8</a></li><li><a href="global.html#loadConfigParam9">loadConfigParam9</a></li><li><a href="global.html#loadConfigParam10">loadConfigParam10</a></li><li><a href="global.html#loadConfigParam11">loadConfigParam11</a></li><li><a href="global.html#loadConfigParam12">loadConfigParam12</a></li><li><a href="global.html#loadConfigParam13">loadConfigParam13</a></li><li><a href="global.html#loadConfigParam14">loadConfigParam14</a></li><li><a href="global.html#loadConfigParam15">loadConfigParam15</a></li><li><a href="global.html#loadConfigParam16">loadConfigParam16</a></li><li><a href="global.html#loadConfigParam17">loadConfigParam17</a></li><li><a href="global.html#loadConfigParam18">loadConfigParam18</a></li><li><a href="global.html#loadConfigParam20">loadConfigParam20</a></li><li><a href="global.html#loadConfigParam21">loadConfigParam21</a></li><li><a href="global.html#loadConfigParam22">loadConfigParam22</a></li><li><a href="global.html#loadConfigParam23">loadConfigParam23</a></li><li><a href="global.html#loadConfigParam24">loadConfigParam24</a></li><li><a href="global.html#loadConfigParam25">loadConfigParam25</a></li><li><a href="global.html#loadConfigParam28">loadConfigParam28</a></li><li><a href="global.html#loadConfigParam29">loadConfigParam29</a></li><li><a href="global.html#loadConfigParam31">loadConfigParam31</a></li><li><a href="global.html#loadConfigParam32">loadConfigParam32</a></li><li><a href="global.html#loadConfigParam33">loadConfigParam33</a></li><li><a href="global.html#loadConfigParam34">loadConfigParam34</a></li><li><a href="global.html#loadConfigParam35">loadConfigParam35</a></li><li><a href="global.html#loadConfigParam36">loadConfigParam36</a></li><li><a href="global.html#loadConfigParam37">loadConfigParam37</a></li><li><a href="global.html#loadConfigParams">loadConfigParams</a></li><li><a href="global.html#loadConfigProposalSetup">loadConfigProposalSetup</a></li><li><a href="global.html#loadConfigVotingSetup">loadConfigVotingSetup</a></li><li><a href="global.html#loadConsensusConfig">loadConsensusConfig</a></li><li><a href="global.html#loadCounters">loadCounters</a></li><li><a href="global.html#loadCreatorStats">loadCreatorStats</a></li><li><a href="global.html#loadCryptoSignature">loadCryptoSignature</a></li><li><a href="global.html#loadCryptoSignaturePair">loadCryptoSignaturePair</a></li><li><a href="global.html#loadCurrencyCollection">loadCurrencyCollection</a></li><li><a href="global.html#loadDepthBalanceInfo">loadDepthBalanceInfo</a></li><li><a href="global.html#loadEither">loadEither</a></li><li><a href="global.html#loadExtBlkRef">loadExtBlkRef</a></li><li><a href="global.html#loadExtraCurrencyCollection">loadExtraCurrencyCollection</a></li><li><a href="global.html#loadFutureSplitMerge">loadFutureSplitMerge</a></li><li><a href="global.html#loadGasLimitsPrices">loadGasLimitsPrices</a></li><li><a href="global.html#loadGlobalVersion">loadGlobalVersion</a></li><li><a href="global.html#loadGrams">loadGrams</a></li><li><a href="global.html#loadHASH_UPDATE">loadHASH_UPDATE</a></li><li><a href="global.html#loadHashmap">loadHashmap</a></li><li><a href="global.html#loadHashmapAug">loadHashmapAug</a></li><li><a href="global.html#loadHashmapAugE">loadHashmapAugE</a></li><li><a href="global.html#loadHashmapE">loadHashmapE</a></li><li><a href="global.html#loadInt8">loadInt8</a></li><li><a href="global.html#loadInt16">loadInt16</a></li><li><a href="global.html#loadInt32">loadInt32</a></li><li><a href="global.html#loadKeyExtBlkRef">loadKeyExtBlkRef</a></li><li><a href="global.html#loadKeyMaxLt">loadKeyMaxLt</a></li><li><a href="global.html#loadMaybe">loadMaybe</a></li><li><a href="global.html#loadMaybeRef">loadMaybeRef</a></li><li><a href="global.html#loadMcBlockExtra">loadMcBlockExtra</a></li><li><a href="global.html#loadMcStateExtra">loadMcStateExtra</a></li><li><a href="global.html#loadMERKLE_UPDATE">loadMERKLE_UPDATE</a></li><li><a href="global.html#loadMessage">loadMessage</a></li><li><a href="global.html#loadMsgAddressExt">loadMsgAddressExt</a></li><li><a href="global.html#loadMsgAddressInt">loadMsgAddressInt</a></li><li><a href="global.html#loadMsgForwardPrices">loadMsgForwardPrices</a></li><li><a href="global.html#loadOldMcBlocksInfo">loadOldMcBlocksInfo</a></li><li><a href="global.html#loadParamLimits">loadParamLimits</a></li><li><a href="global.html#loadRefIfExist">loadRefIfExist</a></li><li><a href="global.html#loadShardAccount">loadShardAccount</a></li><li><a href="global.html#loadShardAccountBlocks">loadShardAccountBlocks</a></li><li><a href="global.html#loadShardAccounts">loadShardAccounts</a></li><li><a href="global.html#loadShardDescr">loadShardDescr</a></li><li><a href="global.html#loadShardFeeCreated">loadShardFeeCreated</a></li><li><a href="global.html#loadShardFees">loadShardFees</a></li><li><a href="global.html#loadShardHashes">loadShardHashes</a></li><li><a href="global.html#loadShardIdent">loadShardIdent</a></li><li><a href="global.html#loadShardStateUnsplit">loadShardStateUnsplit</a></li><li><a href="global.html#loadSigPubKey">loadSigPubKey</a></li><li><a href="global.html#loadStateInit">loadStateInit</a></li><li><a href="global.html#loadStorageInfo">loadStorageInfo</a></li><li><a href="global.html#loadStoragePrices">loadStoragePrices</a></li><li><a href="global.html#loadStorageUsed">loadStorageUsed</a></li><li><a href="global.html#loadStorageUsedShort">loadStorageUsedShort</a></li><li><a href="global.html#loadTickTock">loadTickTock</a></li><li><a href="global.html#loadTrActionPhase">loadTrActionPhase</a></li><li><a href="global.html#loadTransaction">loadTransaction</a></li><li><a href="global.html#loadTransactionDescr">loadTransactionDescr</a></li><li><a href="global.html#loadTrBouncePhase">loadTrBouncePhase</a></li><li><a href="global.html#loadTrComputePhase">loadTrComputePhase</a></li><li><a href="global.html#loadTrCreditPhase">loadTrCreditPhase</a></li><li><a href="global.html#loadTrStoragePhase">loadTrStoragePhase</a></li><li><a href="global.html#loadUint">loadUint</a></li><li><a href="global.html#loadUint8">loadUint8</a></li><li><a href="global.html#loadUint16">loadUint16</a></li><li><a href="global.html#loadUint32">loadUint32</a></li><li><a href="global.html#loadUint64">loadUint64</a></li><li><a href="global.html#loadUintLeq">loadUintLeq</a></li><li><a href="global.html#loadUintLess">loadUintLess</a></li><li><a href="global.html#loadValidatorDescr">loadValidatorDescr</a></li><li><a href="global.html#loadValidatorInfo">loadValidatorInfo</a></li><li><a href="global.html#loadValidatorSet">loadValidatorSet</a></li><li><a href="global.html#loadValueFlow">loadValueFlow</a></li><li><a href="global.html#loadVarUInteger">loadVarUInteger</a></li><li><a href="global.html#loadWorkchainDescr">loadWorkchainDescr</a></li><li><a href="global.html#loadWorkchainFormat1">loadWorkchainFormat1</a></li><li><a href="global.html#readNBytesUIntFromArray">readNBytesUIntFromArray</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runLocal">runLocal</a></li><li><a href="global.html#sha256">sha256</a></li><li><a href="global.html#sha512">sha512</a></li><li><a href="global.html#stringToArray">stringToArray</a></li><li><a href="global.html#stringToBase64">stringToBase64</a></li><li><a href="global.html#stringToBytes">stringToBytes</a></li><li><a href="global.html#toNano">toNano</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.5</a> on Tue Sep 01 2020 21:46:49 GMT+0300 (Moscow Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

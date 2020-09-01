@@ -1,11 +1,39 @@
-const {Cell, Address} = require("../types");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: blockchain/Block.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: blockchain/Block.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const {Cell, Address} = require("../types");
 const {BN, nacl, sha256, sha512, crc16, crc32c, compareBytes, base64ToBytes, bytesToBinString, bytesToHex, concatBytes, stringToArray} = require("../utils");
 const {BlockParser} = require("./BlockParser");
 const {BlockId} = require("./BlockId");
 
 
 /**
- * Main BlockAPI class. <br>
+ * Main BlockAPI class. &lt;br>
  * Examples in test/test-blockapi.js
  */
 class Block {
@@ -28,11 +56,11 @@ class Block {
    * 
    * @param {number} retry Retry count
    * @param {Function} method Async BlockAPI function
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined)}>} Function result object
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined)}>} Function result object
    */
   async callMethod(retry, method) {
     let res;
-    for (let i = 0; i < retry; i++) {
+    for (let i = 0; i &lt; retry; i++) {
       res = await method();
       if (res.ok)
         return res;
@@ -43,7 +71,7 @@ class Block {
   /**
    * Gets latest known block id
    * 
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), id:(BlockId|undefined), clientDiff:(number|undefined), serverDiff:(number|undefined), tonDiff:(number|undefined)}>} result
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), id:(BlockId|undefined), clientDiff:(number|undefined), serverDiff:(number|undefined), tonDiff:(number|undefined)}>} result
    */
   async getLatestId() {
     let result = {ok:false};
@@ -72,7 +100,7 @@ class Block {
    * @param {BlockId} blockId? Block id to lookup
    * @param {BN} lt? Block logical time
    * @param {number} utime? Block create unix time
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), id:(BlockId|undefined), blockHeader:(Object|undefined)}>} Query result
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), id:(BlockId|undefined), blockHeader:(Object|undefined)}>} Query result
    */
   async lookup(blockId, lt, utime) {
     let result = {ok:false};
@@ -97,7 +125,7 @@ class Block {
       const blockHeader = BlockParser.parseBlock(blockProofCell[0].refs[0]);
 
       // check other
-      if (!(lt || utime) && blockHeader.info.seq_no !== blockId.seqno)
+      if (!(lt || utime) &amp;&amp; blockHeader.info.seq_no !== blockId.seqno)
         throw Error("Invalid seqno");
       if (!blockId.compareShard(blockHeader.info.shard.shard))
         throw Error("Invalid shard");
@@ -105,9 +133,9 @@ class Block {
         throw Error("Invalid workchain");
       if (blockHeader.info.not_master != (blockId.workchain !== -1))
         throw Error("Invalid not_master");
-      if (utime && blockHeader.info.gen_utime !== utime)
+      if (utime &amp;&amp; blockHeader.info.gen_utime !== utime)
         throw Error("Invalid utime");
-      if (lt && (lt.lt(blockHeader.info.start_lt) || lt.gt(blockHeader.info.end_lt)))
+      if (lt &amp;&amp; (lt.lt(blockHeader.info.start_lt) || lt.gt(blockHeader.info.end_lt)))
         throw Error("Invalid lt");
 
       // save
@@ -127,7 +155,7 @@ class Block {
    * Gets header of block
    * 
    * @param {BlockId} blockId Block id object
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), blockHeader:(Object|undefined)}>} 
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), blockHeader:(Object|undefined)}>} 
    */
   async getHeader(blockId) {
     let result = {ok:false};
@@ -176,7 +204,7 @@ class Block {
    * Gets block data
    * 
    * @param {BlockId} blockId Block id object
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), block:(Object|undefined)}>} 
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), block:(Object|undefined)}>} 
    */
   async getData(blockId) {
     let result = {ok:false};
@@ -231,11 +259,11 @@ class Block {
     buff[0] = 0x901660ED;   // -1877581587
     buff[1] = cc_seqno;
     buff[2] = nodes.length;
-    for (let i = 0; i < nodes.length; i++) {
+    for (let i = 0; i &lt; nodes.length; i++) {
       const key = new Uint32Array(nodes[i].key.buffer);
       buff.set(key, 3 + i*(8+2+8));
       let weight8 = new Uint8Array(nodes[i].weight.toArray('le'));
-      if (weight8.length < 8) {
+      if (weight8.length &lt; 8) {
           let append = new Uint8Array(8 - weight8.length);
           weight8 = concatBytes(weight8, append);
       }
@@ -252,20 +280,20 @@ class Block {
     if (shuffle_mc_val) {
       // shuffle mc validators from the head of the list
       let idx = [];
-      for (let i = 0; i < count; i++)
+      for (let i = 0; i &lt; count; i++)
         idx.push(0);
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i &lt; count; i++) {
         let j = (await gen.next_ranged(i + 1)).toNumber();  // number 0 .. i
         idx[i] = idx[j];
         idx[j] = i;
       }
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i &lt; count; i++) {
         const v = validators.get(idx[i].toString(16));
         nodes.push({key: v.public_key.pubkey, weight: v.weight, addr: v.adnl_addr ? v.adnl_addr : new Uint8Array(32)});
       }
     } else {
       // simply take needed number of validators from the head of the list
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i &lt; count; i++) {
         const v = validators.get(i.toString(16));
         nodes.push({key: v.public_key.pubkey, weight: v.weight, addr: v.adnl_addr ? v.adnl_addr : new Uint8Array(32)});
       }
@@ -285,7 +313,7 @@ class Block {
    * Validates block by Merkle proofs
    * 
    * @param {BlockId} blockId Block id object
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), valid:(boolean|undefined)}>} 
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), valid:(boolean|undefined)}>} 
    */
   async validate(blockId) {
     let result = {ok:false};
@@ -307,7 +335,7 @@ class Block {
       let from = null;
       for (var key in knownBlocks) {
         const value = knownBlocks[key];
-        if (!from || (Math.abs(value.seqno - blockId.seqno) < Math.abs(value.seqno - from.seqno))) {
+        if (!from || (Math.abs(value.seqno - blockId.seqno) &lt; Math.abs(value.seqno - from.seqno))) {
           from = value;
         }
       }
@@ -316,7 +344,7 @@ class Block {
         throw Error("No known blocks");
 
       // main validation cycle
-      for (let i = 0; i < 10000; i++) {
+      for (let i = 0; i &lt; 10000; i++) {
 
         //console.log('request from', from, 'to', blockId);
 
@@ -331,12 +359,12 @@ class Block {
             blockProof.to.workchain !== -1 || !blockId.compareShard(blockProof.to.shard))
           throw Error("BlockProof must have both source and destination blocks in the masterchain");
 
-        if (blockProof.steps.length < 1)
+        if (blockProof.steps.length &lt; 1)
           throw Error("BlockProof length 0");
 
         let curr = blockProof.from;
         for (let k of blockProof.steps) {
-          if (k['_'] !== 'liteServer.blockLinkBack' && k['_'] !== 'liteServer.blockLinkForward')
+          if (k['_'] !== 'liteServer.blockLinkBack' &amp;&amp; k['_'] !== 'liteServer.blockLinkForward')
             throw Error("Invalid BlockProofLink");
 
           const fwd = k['_'] === 'liteServer.blockLinkForward';
@@ -356,14 +384,14 @@ class Block {
 
           let dest_proof = k.dest_proof;
           let proof = fwd ? k.config_proof : k.proof;
-          if (dest_proof.length === 0 && k.to.seqno > 0)
+          if (dest_proof.length === 0 &amp;&amp; k.to.seqno > 0)
             throw Error("BlockProofLink contains no proof for destination block");
           if (proof.length === 0)
             throw Error("BlockProofLink contains no proof for source block");
 
-          if (fwd && k.signatures.signatures.length === 0)
+          if (fwd &amp;&amp; k.signatures.signatures.length === 0)
             throw Error("a forward BlockProofLink contains no signatures");
-          if (!fwd && k.state_proof.length === 0)
+          if (!fwd &amp;&amp; k.state_proof.length === 0)
             throw Error("a backward BlockProofLink contains no proof for the source state");
 
           const proofCell = await Cell.fromBoc(proof);
@@ -458,13 +486,13 @@ class Block {
             let signed_weight = new BN(0);
             let seen = [];
             let node_list = {};
-            for (let j = 0; j < nodes.length; j++) {
+            for (let j = 0; j &lt; nodes.length; j++) {
               total_weight.iadd(nodes[j].weight);
               const shord_id = new Uint8Array(await this._compute_node_id_short(nodes[j].key));
               node_list[bytesToHex(shord_id)] = nodes[j];
             }
 
-            for (let j = 0; j < k.signatures.signatures.length; j++) {
+            for (let j = 0; j &lt; k.signatures.signatures.length; j++) {
               const signature = k.signatures.signatures[j];
               const s = bytesToHex(new Uint8Array(signature.node_id_short.buffer));
               if (node_list[s] === undefined)
@@ -520,7 +548,7 @@ class Block {
    * Gets shards info
    * 
    * @param {BlockId} blockId Block id object
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), shardHashes:(Object|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined)}>} 
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), shardHashes:(Object|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined)}>} 
    */
   async getShards(blockId) {
     let result = {ok:false};
@@ -572,7 +600,7 @@ class Block {
 
       const mcShardState = BlockParser.parseShardState(blockProofCell[1].refs[0]);
 
-      // get & check shard info hash
+      // get &amp; check shard info hash
       if (!compareBytes(shardHashesHash, mcShardState.custom.shard_hashes.hash))
         throw Error("Invalid shard info hash");
 
@@ -599,12 +627,12 @@ class Block {
    * @param {BN} lt Logical time of first transaction
    * @param {Uint32Array} hash Hash of first transaction
    * @param {BN} to_lt Logical time of last transaction (not including)
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), transactionList:(Object|undefined), blockIdList:(Object|undefined)}>} 
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), transactionList:(Object|undefined), blockIdList:(Object|undefined)}>} 
    */
   async getTransactions(maxCount, accountAddr, lt, hash, to_lt) {
     let result = {ok:false};
     try {
-      if (to_lt !== undefined && lt.lte(to_lt))
+      if (to_lt !== undefined &amp;&amp; lt.lte(to_lt))
         throw Error('lt must be > than to_lt');
 
       const address = new Address(accountAddr);
@@ -618,7 +646,7 @@ class Block {
       let pending = maxCount;
       let to_lt_reached = false;
 
-      for (let r = 0; r < requests; r++) {
+      for (let r = 0; r &lt; requests; r++) {
         const count = Math.min(pending, 10);
 
         let res;
@@ -656,7 +684,7 @@ class Block {
         let checkLast = transactionsCell.length !== count;
         pending -= transactionsCell.length;
 
-        for (let i = 0; i < transactionsCell.length; i++) {
+        for (let i = 0; i &lt; transactionsCell.length; i++) {
           if (!compareBytes(last_hash, transactionsCell[i].getHash(0))) {
             throw Error('Invalid hash in transaction list');
           }
@@ -671,7 +699,7 @@ class Block {
           last_lt = tr.prev_trans_lt;
           transactionList.push(tr);
           blockIdList.push(res.ids[i]);
-          if (to_lt !== undefined && last_lt.lte(to_lt)) {
+          if (to_lt !== undefined &amp;&amp; last_lt.lte(to_lt)) {
             to_lt_reached = true;
             break;
           }
@@ -716,7 +744,7 @@ class Block {
 
     let bt = m.map.get(wc.toString());
     const binAddr = bytesToBinString(addr);
-    for (let i = 0; i < binAddr.length; i++) {
+    for (let i = 0; i &lt; binAddr.length; i++) {
       if (bt.type === "fork") {
         if (binAddr[i] === '0') {
           bt = bt.left;
@@ -737,7 +765,7 @@ class Block {
    * 
    * @param {BlockId} blockId Block id object
    * @param {Address | string} accountAddr Account address
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), account:(Object|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined), lastTransHash:(Uint32Array|undefined), lastTransLt:(BN|undefined)}>} 
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), account:(Object|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined), lastTransHash:(Uint32Array|undefined), lastTransLt:(BN|undefined)}>} 
    */
   async getAccountState(blockId, accountAddr) {
     let result = {ok:false};
@@ -869,7 +897,7 @@ class Block {
 
       const accountHash = accountValue.account._ === "Cell" ? accountValue.account.getHash(0) : accountValue.account.cell.getHash(0);
 
-      // get & check account hash
+      // get &amp; check account hash
       if (accountCell.type !== Cell.OrdinaryCell ||
           !compareBytes(accountCell.getHash(0), accountHash))
         throw Error("Invalid account hash");
@@ -897,7 +925,7 @@ class Block {
    * 
    * @param {BlockId} blockId Block id object
    * @param {number} configNum? Config number (All if not specified)
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), configParam:(Object|undefined), configAddr:(Uint8Array|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined)}>} 
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), configParam:(Object|undefined), configAddr:(Uint8Array|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined)}>} 
    */
   async getConfig(blockId, configNum) {
     let result = {ok:false};
@@ -961,7 +989,7 @@ class Block {
 
       if (!mcState.custom.config.config.map.has(configNum.toString(16))) {
         let configBin = configNum.toString(2);
-        while (configBin.length < 32) {configBin = "0" + configBin;}
+        while (configBin.length &lt; 32) {configBin = "0" + configBin;}
         for (let i in mcState.custom.config.config.prunned) {
           if (configBin.startsWith(mcState.custom.config.config.prunned[i])) {
             throw Error("Invalid config proof!");
@@ -1015,7 +1043,7 @@ class Block {
    * @todo Make proof checks
    * @param {BlockId} blockId Block id object
    * @param {Address | string} accountAddr Account address
-   * @returns {Promise<{ok:boolean, reason:(Error|undefined), smc:(Object|undefined)}>} 
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), smc:(Object|undefined)}>} 
    */
   async runSmcMethod(blockId, accountAddr, method, params) {
     console.warn('Incomplete, do not use');
@@ -1091,11 +1119,11 @@ class ValidatorSetPRNG {
 
   incr_seed() {
     let seed = this.data;
-    for (let i = 31; i >= 0 && !++(seed[i]); --i);
+    for (let i = 31; i >= 0 &amp;&amp; !++(seed[i]); --i);
   }
 
   async next_ulong() {
-    if (this.pos < this.limit) {
+    if (this.pos &lt; this.limit) {
       let res = this.hash.slice(this.pos*8, this.pos*8 + 8);
       this.pos++;
       return new BN(res, 10, 'be');
@@ -1116,4 +1144,26 @@ class ValidatorSetPRNG {
   }
 }
 
-module.exports = {Block};
+module.exports = {Block};</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbiContract.html">AbiContract</a></li><li><a href="Address.html">Address</a></li><li><a href="BitString.html">BitString</a></li><li><a href="Block.html">Block</a></li><li><a href="BlockId.html">BlockId</a></li><li><a href="BlockParser.html">BlockParser</a></li><li><a href="BrowserStorage.html">BrowserStorage</a></li><li><a href="Cell.html">Cell</a></li><li><a href="ClassicContract.html">ClassicContract</a></li><li><a href="Contract.html">Contract</a></li><li><a href="Hashmap.html">Hashmap</a></li><li><a href="HashmapAug.html">HashmapAug</a></li><li><a href="HashmapAugE.html">HashmapAugE</a></li><li><a href="HashmapE.html">HashmapE</a></li><li><a href="LiteClient.html">LiteClient</a></li><li><a href="Storage.html">Storage</a></li></ul><h3>Global</h3><ul><li><a href="global.html#base64ToBytes">base64ToBytes</a></li><li><a href="global.html#base64toString">base64toString</a></li><li><a href="global.html#bytesToBase64">bytesToBase64</a></li><li><a href="global.html#bytesToBinString">bytesToBinString</a></li><li><a href="global.html#bytesToHex">bytesToHex</a></li><li><a href="global.html#bytesToString">bytesToString</a></li><li><a href="global.html#compareBytes">compareBytes</a></li><li><a href="global.html#concatBytes">concatBytes</a></li><li><a href="global.html#crc16">crc16</a></li><li><a href="global.html#crc32c">crc32c</a></li><li><a href="global.html#estimateFee">estimateFee</a></li><li><a href="global.html#fromNano">fromNano</a></li><li><a href="global.html#getAddress">getAddress</a></li><li><a href="global.html#getMessage">getMessage</a></li><li><a href="global.html#hexToBytes">hexToBytes</a></li><li><a href="global.html#loadAccount">loadAccount</a></li><li><a href="global.html#loadAccountBlock">loadAccountBlock</a></li><li><a href="global.html#loadAccountState">loadAccountState</a></li><li><a href="global.html#loadAccountStatus">loadAccountStatus</a></li><li><a href="global.html#loadAccountStorage">loadAccountStorage</a></li><li><a href="global.html#loadAccStatusChange">loadAccStatusChange</a></li><li><a href="global.html#loadAny">loadAny</a></li><li><a href="global.html#loadAnycast">loadAnycast</a></li><li><a href="global.html#loadBinTree">loadBinTree</a></li><li><a href="global.html#loadBit">loadBit</a></li><li><a href="global.html#loadBits">loadBits</a></li><li><a href="global.html#loadBlkMasterInfo">loadBlkMasterInfo</a></li><li><a href="global.html#loadBlkPrevInfo">loadBlkPrevInfo</a></li><li><a href="global.html#loadBlock">loadBlock</a></li><li><a href="global.html#loadBlockCreateFees">loadBlockCreateFees</a></li><li><a href="global.html#loadBlockCreateStats">loadBlockCreateStats</a></li><li><a href="global.html#loadBlockExtra">loadBlockExtra</a></li><li><a href="global.html#loadBlockIdExt">loadBlockIdExt</a></li><li><a href="global.html#loadBlockInfo">loadBlockInfo</a></li><li><a href="global.html#loadBlockLimits">loadBlockLimits</a></li><li><a href="global.html#loadBool">loadBool</a></li><li><a href="global.html#loadCatchainConfig">loadCatchainConfig</a></li><li><a href="global.html#loadCommonMsgInfo">loadCommonMsgInfo</a></li><li><a href="global.html#loadComplaintPricing">loadComplaintPricing</a></li><li><a href="global.html#loadComputeSkipReason">loadComputeSkipReason</a></li><li><a href="global.html#loadConfigParam">loadConfigParam</a></li><li><a href="global.html#loadConfigParam0">loadConfigParam0</a></li><li><a href="global.html#loadConfigParam1">loadConfigParam1</a></li><li><a href="global.html#loadConfigParam2">loadConfigParam2</a></li><li><a href="global.html#loadConfigParam3">loadConfigParam3</a></li><li><a href="global.html#loadConfigParam4">loadConfigParam4</a></li><li><a href="global.html#loadConfigParam6">loadConfigParam6</a></li><li><a href="global.html#loadConfigParam7">loadConfigParam7</a></li><li><a href="global.html#loadConfigParam8">loadConfigParam8</a></li><li><a href="global.html#loadConfigParam9">loadConfigParam9</a></li><li><a href="global.html#loadConfigParam10">loadConfigParam10</a></li><li><a href="global.html#loadConfigParam11">loadConfigParam11</a></li><li><a href="global.html#loadConfigParam12">loadConfigParam12</a></li><li><a href="global.html#loadConfigParam13">loadConfigParam13</a></li><li><a href="global.html#loadConfigParam14">loadConfigParam14</a></li><li><a href="global.html#loadConfigParam15">loadConfigParam15</a></li><li><a href="global.html#loadConfigParam16">loadConfigParam16</a></li><li><a href="global.html#loadConfigParam17">loadConfigParam17</a></li><li><a href="global.html#loadConfigParam18">loadConfigParam18</a></li><li><a href="global.html#loadConfigParam20">loadConfigParam20</a></li><li><a href="global.html#loadConfigParam21">loadConfigParam21</a></li><li><a href="global.html#loadConfigParam22">loadConfigParam22</a></li><li><a href="global.html#loadConfigParam23">loadConfigParam23</a></li><li><a href="global.html#loadConfigParam24">loadConfigParam24</a></li><li><a href="global.html#loadConfigParam25">loadConfigParam25</a></li><li><a href="global.html#loadConfigParam28">loadConfigParam28</a></li><li><a href="global.html#loadConfigParam29">loadConfigParam29</a></li><li><a href="global.html#loadConfigParam31">loadConfigParam31</a></li><li><a href="global.html#loadConfigParam32">loadConfigParam32</a></li><li><a href="global.html#loadConfigParam33">loadConfigParam33</a></li><li><a href="global.html#loadConfigParam34">loadConfigParam34</a></li><li><a href="global.html#loadConfigParam35">loadConfigParam35</a></li><li><a href="global.html#loadConfigParam36">loadConfigParam36</a></li><li><a href="global.html#loadConfigParam37">loadConfigParam37</a></li><li><a href="global.html#loadConfigParams">loadConfigParams</a></li><li><a href="global.html#loadConfigProposalSetup">loadConfigProposalSetup</a></li><li><a href="global.html#loadConfigVotingSetup">loadConfigVotingSetup</a></li><li><a href="global.html#loadConsensusConfig">loadConsensusConfig</a></li><li><a href="global.html#loadCounters">loadCounters</a></li><li><a href="global.html#loadCreatorStats">loadCreatorStats</a></li><li><a href="global.html#loadCryptoSignature">loadCryptoSignature</a></li><li><a href="global.html#loadCryptoSignaturePair">loadCryptoSignaturePair</a></li><li><a href="global.html#loadCurrencyCollection">loadCurrencyCollection</a></li><li><a href="global.html#loadDepthBalanceInfo">loadDepthBalanceInfo</a></li><li><a href="global.html#loadEither">loadEither</a></li><li><a href="global.html#loadExtBlkRef">loadExtBlkRef</a></li><li><a href="global.html#loadExtraCurrencyCollection">loadExtraCurrencyCollection</a></li><li><a href="global.html#loadFutureSplitMerge">loadFutureSplitMerge</a></li><li><a href="global.html#loadGasLimitsPrices">loadGasLimitsPrices</a></li><li><a href="global.html#loadGlobalVersion">loadGlobalVersion</a></li><li><a href="global.html#loadGrams">loadGrams</a></li><li><a href="global.html#loadHASH_UPDATE">loadHASH_UPDATE</a></li><li><a href="global.html#loadHashmap">loadHashmap</a></li><li><a href="global.html#loadHashmapAug">loadHashmapAug</a></li><li><a href="global.html#loadHashmapAugE">loadHashmapAugE</a></li><li><a href="global.html#loadHashmapE">loadHashmapE</a></li><li><a href="global.html#loadInt8">loadInt8</a></li><li><a href="global.html#loadInt16">loadInt16</a></li><li><a href="global.html#loadInt32">loadInt32</a></li><li><a href="global.html#loadKeyExtBlkRef">loadKeyExtBlkRef</a></li><li><a href="global.html#loadKeyMaxLt">loadKeyMaxLt</a></li><li><a href="global.html#loadMaybe">loadMaybe</a></li><li><a href="global.html#loadMaybeRef">loadMaybeRef</a></li><li><a href="global.html#loadMcBlockExtra">loadMcBlockExtra</a></li><li><a href="global.html#loadMcStateExtra">loadMcStateExtra</a></li><li><a href="global.html#loadMERKLE_UPDATE">loadMERKLE_UPDATE</a></li><li><a href="global.html#loadMessage">loadMessage</a></li><li><a href="global.html#loadMsgAddressExt">loadMsgAddressExt</a></li><li><a href="global.html#loadMsgAddressInt">loadMsgAddressInt</a></li><li><a href="global.html#loadMsgForwardPrices">loadMsgForwardPrices</a></li><li><a href="global.html#loadOldMcBlocksInfo">loadOldMcBlocksInfo</a></li><li><a href="global.html#loadParamLimits">loadParamLimits</a></li><li><a href="global.html#loadRefIfExist">loadRefIfExist</a></li><li><a href="global.html#loadShardAccount">loadShardAccount</a></li><li><a href="global.html#loadShardAccountBlocks">loadShardAccountBlocks</a></li><li><a href="global.html#loadShardAccounts">loadShardAccounts</a></li><li><a href="global.html#loadShardDescr">loadShardDescr</a></li><li><a href="global.html#loadShardFeeCreated">loadShardFeeCreated</a></li><li><a href="global.html#loadShardFees">loadShardFees</a></li><li><a href="global.html#loadShardHashes">loadShardHashes</a></li><li><a href="global.html#loadShardIdent">loadShardIdent</a></li><li><a href="global.html#loadShardStateUnsplit">loadShardStateUnsplit</a></li><li><a href="global.html#loadSigPubKey">loadSigPubKey</a></li><li><a href="global.html#loadStateInit">loadStateInit</a></li><li><a href="global.html#loadStorageInfo">loadStorageInfo</a></li><li><a href="global.html#loadStoragePrices">loadStoragePrices</a></li><li><a href="global.html#loadStorageUsed">loadStorageUsed</a></li><li><a href="global.html#loadStorageUsedShort">loadStorageUsedShort</a></li><li><a href="global.html#loadTickTock">loadTickTock</a></li><li><a href="global.html#loadTrActionPhase">loadTrActionPhase</a></li><li><a href="global.html#loadTransaction">loadTransaction</a></li><li><a href="global.html#loadTransactionDescr">loadTransactionDescr</a></li><li><a href="global.html#loadTrBouncePhase">loadTrBouncePhase</a></li><li><a href="global.html#loadTrComputePhase">loadTrComputePhase</a></li><li><a href="global.html#loadTrCreditPhase">loadTrCreditPhase</a></li><li><a href="global.html#loadTrStoragePhase">loadTrStoragePhase</a></li><li><a href="global.html#loadUint">loadUint</a></li><li><a href="global.html#loadUint8">loadUint8</a></li><li><a href="global.html#loadUint16">loadUint16</a></li><li><a href="global.html#loadUint32">loadUint32</a></li><li><a href="global.html#loadUint64">loadUint64</a></li><li><a href="global.html#loadUintLeq">loadUintLeq</a></li><li><a href="global.html#loadUintLess">loadUintLess</a></li><li><a href="global.html#loadValidatorDescr">loadValidatorDescr</a></li><li><a href="global.html#loadValidatorInfo">loadValidatorInfo</a></li><li><a href="global.html#loadValidatorSet">loadValidatorSet</a></li><li><a href="global.html#loadValueFlow">loadValueFlow</a></li><li><a href="global.html#loadVarUInteger">loadVarUInteger</a></li><li><a href="global.html#loadWorkchainDescr">loadWorkchainDescr</a></li><li><a href="global.html#loadWorkchainFormat1">loadWorkchainFormat1</a></li><li><a href="global.html#readNBytesUIntFromArray">readNBytesUIntFromArray</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runLocal">runLocal</a></li><li><a href="global.html#sha256">sha256</a></li><li><a href="global.html#sha512">sha512</a></li><li><a href="global.html#stringToArray">stringToArray</a></li><li><a href="global.html#stringToBase64">stringToBase64</a></li><li><a href="global.html#stringToBytes">stringToBytes</a></li><li><a href="global.html#toNano">toNano</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.5</a> on Tue Sep 01 2020 21:46:48 GMT+0300 (Moscow Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

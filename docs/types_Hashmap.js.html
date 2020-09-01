@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: types/Hashmap.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: types/Hashmap.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const {BN} = require("../utils");
+const {Cell} = require("./Cell");
+const {
+    loadBit,
+    loadUint,
+    loadUintLeq,
+    loadMaybeRef
+} = require("../blockchain/BlockUtils");
+
+/**
+ * TON Hashmap class
+ */
+class Hashmap {
+
+    /**
+     * Creates empty hashmap with `n` bitwidth
+     * 
+     * @param {number} n Hash bitwidth
+     * @param {function} f Function for leaf load
+     */
+    constructor(n, f) {
+        this.map = new Map();
+        this.prunned = [];
+        this.n = n;
+        this.f = f;
+        this._ = "Hashmap";
+    }
+
+    /*
+    Map key is {number | BN}
+    */
+
+    /*
+    this.map.set(key, value)
+    this.map.get(key)
+    this.map.has(key)
+    this.map.delete(key)
+    this.map.clear()
+    this.map.size
+    */
+
+    /**
+     * @private
+     * @param {string} key1 
+     * @param {string} key2 
+     */
+    getLabel(key1, key2) {
+        let i = 0;
+        let result = "";
+
+        while (i &lt; key1.length &amp;&amp; i &lt; key2.length)
+        {
+            if (key1[i] === key2[i]) {
+                result += key1[i];
+                i++;
+            }
+            else
+                break;
+        }
+        return result;
+    }
+
+    /**
+     * @private
+     * @param {Cell} cell 
+     * @param {Object} t 
+     */
+    loadUnary(cell, t) {
+        const type = loadBit(cell, t);
+        if (type === 0) {
+            // unary_zero
+            return 0;
+        } else {
+            // unary_succ
+            const x = this.loadUnary(cell, t);
+            return x + 1;
+        }
+    }
+
+    /**
+     * @private
+     * @param {Cell} cell 
+     * @param {Object} t 
+     * @param {number} m 
+     */
+    loadLabel(cell, t, m) {
+        const type = loadBit(cell, t);
+        if (type === 0) {
+            // hml_short$0 {m:#} {n:#} len:(Unary ~n) s:(n * Bit) = HmLabel ~n m;
+            const n = this.loadUnary(cell, t);
+            if (n > 0) {
+                const s = loadUint(cell, t, n);
+                return [s, n];
+            } else {
+                return [new BN(0), n];
+            }
+        }
+        else {
+            const type2 = loadBit(cell, t);
+            if (type2 === 0) {
+                // hml_long$10 {m:#} n:(#&lt;= m) s:(n * Bit) = HmLabel ~n m;
+                const n = loadUintLeq(cell, t, m);
+                const s = loadUint(cell, t, n);
+                return [s, n];
+            }
+            else {
+                // hml_same$11 {m:#} v:Bit n:(#&lt;= m) = HmLabel ~n m;
+                const v = loadBit(cell, t);
+                const n = loadUintLeq(cell, t, m);
+                let s = new BN(0);
+                for (let i = 0; i &lt; n; i++) {
+                    s.ishln(1).ior(new BN(v));
+                }
+                return [s, n];
+            }
+        }
+    }
+
+    /**
+     * @private
+     * @param {Cell} cell 
+     * @param {Object} t 
+     * @param {number} n 
+     * @param {BN} key 
+     * @param {boolean} fork 
+     */
+    loadHashmap(cell, t, n, key, fork=false) {
+        if (cell.type !== Cell.OrdinaryCell) {
+            if (cell.type === Cell.PrunnedBranchCell) {
+                this.prunned.push(key.toString(2, this.n));
+            }
+            return;
+        }
+        if (n === 0 &amp;&amp; fork) {
+            // hmn_leaf#_ {X:Type} value:X = HashmapNode 0 X;
+            if (this.f) {
+                const data = this.f(cell, t, key);
+                if (data) {
+                    //console.log('add to hashmap', key.toString(16), data);
+                    this.map.set(key.toString(16), data);
+                }
+            }
+            return;
+        }
+        if (fork) {
+            // no data in cell
+            // hmn_fork#_ {n:#} {X:Type} left:^(Hashmap n X) right:^(Hashmap n X) = HashmapNode (n + 1) X;
+            const left = key.shln(1);
+            this.loadHashmap(cell.refs[t.ref++], {cs:0, ref:0}, n-1, left, !fork);
+            const right = key.shln(1).add(new BN(1));
+            this.loadHashmap(cell.refs[t.ref++], {cs:0, ref:0}, n-1, right, !fork);
+            return;
+        } else {
+            // got some data
+            // hm_edge#_ {n:#} {X:Type} {l:#} {m:#} label:(HmLabel ~l n) {n = (~m) + l} node:(HashmapNode m X) = Hashmap n X;
+            const label = this.loadLabel(cell, t, n);
+            if (label[1] > 0) {
+                const nextkey = key.shln(label[1]).or(label[0]);
+                const m = n - label[1];
+                this.loadHashmap(cell, t, m, nextkey, !fork);
+            } else {
+                this.loadHashmap(cell, t, n, key, !fork);
+            }
+            return;
+        }
+    }
+
+    /**
+     * Loads hashmap from cell tree
+     * 
+     * @throws {Error}
+     * @param {Cell} cell Cell to load from 
+     * @param {Object} t Position in cell
+     */
+    deserialize(cell, t) {
+        this.loadHashmap(cell, t, this.n, new BN(0));
+    }
+
+    /**
+     * Serializes Hashmap to Cell
+     * 
+     * @throws {Error}
+     * @param {Cell} cell
+     */
+    serialize(cell) {
+        if (this.size === 0) {
+            throw Error("Hashmap cannot be empty");
+        }
+
+        let m = {};
+        for (let k of this.keys()) {
+            let kn = new BN(k);
+            m[kn.toString(2, this.n)] = this.map.get(k);
+        }
+
+        this.serializeBitmap(cell, m, this.n);
+    }
+
+    /**
+     * @private
+     * @throws {Error}
+     * @param {Cell} cell
+     */
+    serializeBitmap(cell, map, n) {
+        if (map.size === 0) {
+            throw "Hashmap cannot be empty";
+        }
+
+        let label = null;
+        let one = null;
+        for (let k in map) {
+            if (label === null) {
+                label = k;
+                one = map[k];
+            } else {
+                label = this.getLabel(label, k);
+            }
+        }
+        if (label.length === 0 || label === 'one') {
+            if (n === 0) {
+                // hmn_leaf#_ {X:Type} value:X = HashmapNode 0 X;
+                const free = cell.bits.getFreeBits();
+                const need = one.bits.getUsedBits();
+                if (free &lt; need) {
+                    throw Error("Cannot fit data in Cell");
+                }
+                cell.writeCell(one);
+                return;
+            } else {
+                // hmn_fork#_ {n:#} {X:Type} left:^(Hashmap n X)
+                // right:^(Hashmap n X) = HashmapNode (n + 1) X;
+                let left = {};
+                let right = {};
+                for (let k in map) {
+                    if (k[0] === '0') {
+                        left[k.slice(1)] = map[k];
+                    } else {
+                        right[k.slice(1)] = map[k];
+                    }
+                }
+
+                let left_cell = new Cell();
+                this.serializeBitmap(left_cell, left, n-1);
+                cell.refs.push(left_cell);
+
+                let right_cell = new Cell();
+                this.serializeBitmap(right_cell, right, n-1);
+                cell.refs.push(right_cell);
+
+                return;
+            }
+        } else {
+            // hm_edge#_ {n:#} {X:Type} {l:#} {m:#} label:(HmLabel ~l n)
+            // {n = (~m) + l} node:(HashmapNode m X) = Hashmap n X;
+            if (label.split("0").length - 1 === label.length || label.split("1").length - 1 === label.length) {
+                // hml_same$11 {m:#} v:Bit n:(#&lt;= m) = HmLabel ~n m;
+                cell.bits.writeBit(1);
+                cell.bits.writeBit(1);
+                cell.bits.writeBit(label[0] === '1');
+                const log_n = Math.ceil(Math.log2(n+1));
+                cell.bits.writeUint(n, log_n);
+            }
+            else {
+                // hml_long$10 {m:#} n:(#&lt;= m) s:(n * Bit) = HmLabel ~n m;
+                cell.bits.writeBit(1);
+                cell.bits.writeBit(0);
+                const log_n = Math.ceil(Math.log2(n+1));
+                cell.bits.writeUint(n, log_n);
+                const s = new BN(label, 2);
+                cell.bits.writeUint(s, n);
+            }
+            // TODO
+            // hml_short$0 {m:#} {n:#} len:(Unary ~n)
+            // s:(n * Bit) = HmLabel ~n m;
+            let next = {};
+            if (label.length === n) {
+                next['one'] = map[label];
+            } else {
+                for (let k in map) {
+                    next[k.slice(label.length)] = map[k];
+                }
+            }
+            this.serializeBitmap(cell, next, n-label.length);
+            return;
+        }
+    }
+}
+
+
+/**
+ * TON HashmapE class
+ */
+class HashmapE extends Hashmap {
+
+    /**
+     * Creates empty hashmap with `n` bitwidth
+     * 
+     * @param {number} n Hash bitwidth
+     * @param {function} f Function for leaf load
+     */
+    constructor(n, f) {
+        super(n, f);
+        this._ = "HashmapE";
+    }
+
+    /**
+     * Loads HashmapE from cell tree
+     * 
+     * @throws {Error}
+     * @param {Cell} cell Cell to load from 
+     * @param {Object} t Position in cell
+     */
+    deserialize(cell, t) {
+        // eslint-disable-next-line no-unused-vars
+        loadMaybeRef(cell, t, (c,p) => this.loadHashmap(c, p, this.n, new BN(0)), (c,p) => {this.hash = c.getHash(0);});
+    }
+
+    /**
+     * Serializes HashmapE to Cell
+     * 
+     * @param {Cell} cell
+     */
+    serialize(cell) {
+        if (this.size === 0) {
+            // hme_empty$0 {n:#} {X:Type} = HashmapE n X;
+            cell.bits.writeBit(0);
+            return;
+        }
+
+        // hme_root$1 {n:#} {X:Type} root:^(Hashmap n X) = HashmapE n X;
+
+        cell.bits.writeBit(1);
+
+        let c = new Cell();
+        super.serialize(c);
+        cell.refs.push(c);
+    }
+}
+
+/**
+ * TON HashmapAug class
+ */
+class HashmapAug extends Hashmap {
+
+    /**
+     * Creates empty hashmap with `n` bitwidth
+     * 
+     * @param {number} n Hash bitwidth
+     * @param {function} f Function for leaf load
+     */
+    constructor(n, f) {
+        super(n, f);
+        this._ = "HashmapAug";
+    }
+}
+
+/**
+ * TON HashmapAugE class
+ */
+class HashmapAugE extends HashmapE {
+
+    /**
+     * Creates empty hashmap with `n` bitwidth
+     * 
+     * @param {number} n Hash bitwidth
+     * @param {function} f Function for leaf load
+     */
+    constructor(n, f) {
+        super(n, f);
+        this._ = "HashmapAugE";
+    }
+}
+
+module.exports = {Hashmap, HashmapE, HashmapAug, HashmapAugE};</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbiContract.html">AbiContract</a></li><li><a href="Address.html">Address</a></li><li><a href="BitString.html">BitString</a></li><li><a href="Block.html">Block</a></li><li><a href="BlockId.html">BlockId</a></li><li><a href="BlockParser.html">BlockParser</a></li><li><a href="BrowserStorage.html">BrowserStorage</a></li><li><a href="Cell.html">Cell</a></li><li><a href="ClassicContract.html">ClassicContract</a></li><li><a href="Contract.html">Contract</a></li><li><a href="Hashmap.html">Hashmap</a></li><li><a href="HashmapAug.html">HashmapAug</a></li><li><a href="HashmapAugE.html">HashmapAugE</a></li><li><a href="HashmapE.html">HashmapE</a></li><li><a href="LiteClient.html">LiteClient</a></li><li><a href="Storage.html">Storage</a></li></ul><h3>Global</h3><ul><li><a href="global.html#base64ToBytes">base64ToBytes</a></li><li><a href="global.html#base64toString">base64toString</a></li><li><a href="global.html#bytesToBase64">bytesToBase64</a></li><li><a href="global.html#bytesToBinString">bytesToBinString</a></li><li><a href="global.html#bytesToHex">bytesToHex</a></li><li><a href="global.html#bytesToString">bytesToString</a></li><li><a href="global.html#compareBytes">compareBytes</a></li><li><a href="global.html#concatBytes">concatBytes</a></li><li><a href="global.html#crc16">crc16</a></li><li><a href="global.html#crc32c">crc32c</a></li><li><a href="global.html#estimateFee">estimateFee</a></li><li><a href="global.html#fromNano">fromNano</a></li><li><a href="global.html#getAddress">getAddress</a></li><li><a href="global.html#getMessage">getMessage</a></li><li><a href="global.html#hexToBytes">hexToBytes</a></li><li><a href="global.html#loadAccount">loadAccount</a></li><li><a href="global.html#loadAccountBlock">loadAccountBlock</a></li><li><a href="global.html#loadAccountState">loadAccountState</a></li><li><a href="global.html#loadAccountStatus">loadAccountStatus</a></li><li><a href="global.html#loadAccountStorage">loadAccountStorage</a></li><li><a href="global.html#loadAccStatusChange">loadAccStatusChange</a></li><li><a href="global.html#loadAny">loadAny</a></li><li><a href="global.html#loadAnycast">loadAnycast</a></li><li><a href="global.html#loadBinTree">loadBinTree</a></li><li><a href="global.html#loadBit">loadBit</a></li><li><a href="global.html#loadBits">loadBits</a></li><li><a href="global.html#loadBlkMasterInfo">loadBlkMasterInfo</a></li><li><a href="global.html#loadBlkPrevInfo">loadBlkPrevInfo</a></li><li><a href="global.html#loadBlock">loadBlock</a></li><li><a href="global.html#loadBlockCreateFees">loadBlockCreateFees</a></li><li><a href="global.html#loadBlockCreateStats">loadBlockCreateStats</a></li><li><a href="global.html#loadBlockExtra">loadBlockExtra</a></li><li><a href="global.html#loadBlockIdExt">loadBlockIdExt</a></li><li><a href="global.html#loadBlockInfo">loadBlockInfo</a></li><li><a href="global.html#loadBlockLimits">loadBlockLimits</a></li><li><a href="global.html#loadBool">loadBool</a></li><li><a href="global.html#loadCatchainConfig">loadCatchainConfig</a></li><li><a href="global.html#loadCommonMsgInfo">loadCommonMsgInfo</a></li><li><a href="global.html#loadComplaintPricing">loadComplaintPricing</a></li><li><a href="global.html#loadComputeSkipReason">loadComputeSkipReason</a></li><li><a href="global.html#loadConfigParam">loadConfigParam</a></li><li><a href="global.html#loadConfigParam0">loadConfigParam0</a></li><li><a href="global.html#loadConfigParam1">loadConfigParam1</a></li><li><a href="global.html#loadConfigParam2">loadConfigParam2</a></li><li><a href="global.html#loadConfigParam3">loadConfigParam3</a></li><li><a href="global.html#loadConfigParam4">loadConfigParam4</a></li><li><a href="global.html#loadConfigParam6">loadConfigParam6</a></li><li><a href="global.html#loadConfigParam7">loadConfigParam7</a></li><li><a href="global.html#loadConfigParam8">loadConfigParam8</a></li><li><a href="global.html#loadConfigParam9">loadConfigParam9</a></li><li><a href="global.html#loadConfigParam10">loadConfigParam10</a></li><li><a href="global.html#loadConfigParam11">loadConfigParam11</a></li><li><a href="global.html#loadConfigParam12">loadConfigParam12</a></li><li><a href="global.html#loadConfigParam13">loadConfigParam13</a></li><li><a href="global.html#loadConfigParam14">loadConfigParam14</a></li><li><a href="global.html#loadConfigParam15">loadConfigParam15</a></li><li><a href="global.html#loadConfigParam16">loadConfigParam16</a></li><li><a href="global.html#loadConfigParam17">loadConfigParam17</a></li><li><a href="global.html#loadConfigParam18">loadConfigParam18</a></li><li><a href="global.html#loadConfigParam20">loadConfigParam20</a></li><li><a href="global.html#loadConfigParam21">loadConfigParam21</a></li><li><a href="global.html#loadConfigParam22">loadConfigParam22</a></li><li><a href="global.html#loadConfigParam23">loadConfigParam23</a></li><li><a href="global.html#loadConfigParam24">loadConfigParam24</a></li><li><a href="global.html#loadConfigParam25">loadConfigParam25</a></li><li><a href="global.html#loadConfigParam28">loadConfigParam28</a></li><li><a href="global.html#loadConfigParam29">loadConfigParam29</a></li><li><a href="global.html#loadConfigParam31">loadConfigParam31</a></li><li><a href="global.html#loadConfigParam32">loadConfigParam32</a></li><li><a href="global.html#loadConfigParam33">loadConfigParam33</a></li><li><a href="global.html#loadConfigParam34">loadConfigParam34</a></li><li><a href="global.html#loadConfigParam35">loadConfigParam35</a></li><li><a href="global.html#loadConfigParam36">loadConfigParam36</a></li><li><a href="global.html#loadConfigParam37">loadConfigParam37</a></li><li><a href="global.html#loadConfigParams">loadConfigParams</a></li><li><a href="global.html#loadConfigProposalSetup">loadConfigProposalSetup</a></li><li><a href="global.html#loadConfigVotingSetup">loadConfigVotingSetup</a></li><li><a href="global.html#loadConsensusConfig">loadConsensusConfig</a></li><li><a href="global.html#loadCounters">loadCounters</a></li><li><a href="global.html#loadCreatorStats">loadCreatorStats</a></li><li><a href="global.html#loadCryptoSignature">loadCryptoSignature</a></li><li><a href="global.html#loadCryptoSignaturePair">loadCryptoSignaturePair</a></li><li><a href="global.html#loadCurrencyCollection">loadCurrencyCollection</a></li><li><a href="global.html#loadDepthBalanceInfo">loadDepthBalanceInfo</a></li><li><a href="global.html#loadEither">loadEither</a></li><li><a href="global.html#loadExtBlkRef">loadExtBlkRef</a></li><li><a href="global.html#loadExtraCurrencyCollection">loadExtraCurrencyCollection</a></li><li><a href="global.html#loadFutureSplitMerge">loadFutureSplitMerge</a></li><li><a href="global.html#loadGasLimitsPrices">loadGasLimitsPrices</a></li><li><a href="global.html#loadGlobalVersion">loadGlobalVersion</a></li><li><a href="global.html#loadGrams">loadGrams</a></li><li><a href="global.html#loadHASH_UPDATE">loadHASH_UPDATE</a></li><li><a href="global.html#loadHashmap">loadHashmap</a></li><li><a href="global.html#loadHashmapAug">loadHashmapAug</a></li><li><a href="global.html#loadHashmapAugE">loadHashmapAugE</a></li><li><a href="global.html#loadHashmapE">loadHashmapE</a></li><li><a href="global.html#loadInt8">loadInt8</a></li><li><a href="global.html#loadInt16">loadInt16</a></li><li><a href="global.html#loadInt32">loadInt32</a></li><li><a href="global.html#loadKeyExtBlkRef">loadKeyExtBlkRef</a></li><li><a href="global.html#loadKeyMaxLt">loadKeyMaxLt</a></li><li><a href="global.html#loadMaybe">loadMaybe</a></li><li><a href="global.html#loadMaybeRef">loadMaybeRef</a></li><li><a href="global.html#loadMcBlockExtra">loadMcBlockExtra</a></li><li><a href="global.html#loadMcStateExtra">loadMcStateExtra</a></li><li><a href="global.html#loadMERKLE_UPDATE">loadMERKLE_UPDATE</a></li><li><a href="global.html#loadMessage">loadMessage</a></li><li><a href="global.html#loadMsgAddressExt">loadMsgAddressExt</a></li><li><a href="global.html#loadMsgAddressInt">loadMsgAddressInt</a></li><li><a href="global.html#loadMsgForwardPrices">loadMsgForwardPrices</a></li><li><a href="global.html#loadOldMcBlocksInfo">loadOldMcBlocksInfo</a></li><li><a href="global.html#loadParamLimits">loadParamLimits</a></li><li><a href="global.html#loadRefIfExist">loadRefIfExist</a></li><li><a href="global.html#loadShardAccount">loadShardAccount</a></li><li><a href="global.html#loadShardAccountBlocks">loadShardAccountBlocks</a></li><li><a href="global.html#loadShardAccounts">loadShardAccounts</a></li><li><a href="global.html#loadShardDescr">loadShardDescr</a></li><li><a href="global.html#loadShardFeeCreated">loadShardFeeCreated</a></li><li><a href="global.html#loadShardFees">loadShardFees</a></li><li><a href="global.html#loadShardHashes">loadShardHashes</a></li><li><a href="global.html#loadShardIdent">loadShardIdent</a></li><li><a href="global.html#loadShardStateUnsplit">loadShardStateUnsplit</a></li><li><a href="global.html#loadSigPubKey">loadSigPubKey</a></li><li><a href="global.html#loadStateInit">loadStateInit</a></li><li><a href="global.html#loadStorageInfo">loadStorageInfo</a></li><li><a href="global.html#loadStoragePrices">loadStoragePrices</a></li><li><a href="global.html#loadStorageUsed">loadStorageUsed</a></li><li><a href="global.html#loadStorageUsedShort">loadStorageUsedShort</a></li><li><a href="global.html#loadTickTock">loadTickTock</a></li><li><a href="global.html#loadTrActionPhase">loadTrActionPhase</a></li><li><a href="global.html#loadTransaction">loadTransaction</a></li><li><a href="global.html#loadTransactionDescr">loadTransactionDescr</a></li><li><a href="global.html#loadTrBouncePhase">loadTrBouncePhase</a></li><li><a href="global.html#loadTrComputePhase">loadTrComputePhase</a></li><li><a href="global.html#loadTrCreditPhase">loadTrCreditPhase</a></li><li><a href="global.html#loadTrStoragePhase">loadTrStoragePhase</a></li><li><a href="global.html#loadUint">loadUint</a></li><li><a href="global.html#loadUint8">loadUint8</a></li><li><a href="global.html#loadUint16">loadUint16</a></li><li><a href="global.html#loadUint32">loadUint32</a></li><li><a href="global.html#loadUint64">loadUint64</a></li><li><a href="global.html#loadUintLeq">loadUintLeq</a></li><li><a href="global.html#loadUintLess">loadUintLess</a></li><li><a href="global.html#loadValidatorDescr">loadValidatorDescr</a></li><li><a href="global.html#loadValidatorInfo">loadValidatorInfo</a></li><li><a href="global.html#loadValidatorSet">loadValidatorSet</a></li><li><a href="global.html#loadValueFlow">loadValueFlow</a></li><li><a href="global.html#loadVarUInteger">loadVarUInteger</a></li><li><a href="global.html#loadWorkchainDescr">loadWorkchainDescr</a></li><li><a href="global.html#loadWorkchainFormat1">loadWorkchainFormat1</a></li><li><a href="global.html#readNBytesUIntFromArray">readNBytesUIntFromArray</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runLocal">runLocal</a></li><li><a href="global.html#sha256">sha256</a></li><li><a href="global.html#sha512">sha512</a></li><li><a href="global.html#stringToArray">stringToArray</a></li><li><a href="global.html#stringToBase64">stringToBase64</a></li><li><a href="global.html#stringToBytes">stringToBytes</a></li><li><a href="global.html#toNano">toNano</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.5</a> on Tue Sep 01 2020 21:46:49 GMT+0300 (Moscow Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

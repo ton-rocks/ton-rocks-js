@@ -7,10 +7,16 @@ const {
     loadMaybeRef
 } = require("../blockchain/BlockUtils");
 
-
+/**
+ * TON Hashmap class
+ */
 class Hashmap {
+
     /**
-     * @param n {number}    hash bitwidth
+     * Creates empty hashmap with `n` bitwidth
+     * 
+     * @param {number} n Hash bitwidth
+     * @param {function} f Function for leaf load
      */
     constructor(n, f) {
         this.map = new Map();
@@ -33,6 +39,11 @@ class Hashmap {
     this.map.size
     */
 
+    /**
+     * @private
+     * @param {string} key1 
+     * @param {string} key2 
+     */
     getLabel(key1, key2) {
         let i = 0;
         let result = "";
@@ -49,6 +60,11 @@ class Hashmap {
         return result;
     }
 
+    /**
+     * @private
+     * @param {Cell} cell 
+     * @param {Object} t 
+     */
     loadUnary(cell, t) {
         const type = loadBit(cell, t);
         if (type === 0) {
@@ -61,6 +77,12 @@ class Hashmap {
         }
     }
 
+    /**
+     * @private
+     * @param {Cell} cell 
+     * @param {Object} t 
+     * @param {number} m 
+     */
     loadLabel(cell, t, m) {
         const type = loadBit(cell, t);
         if (type === 0) {
@@ -94,6 +116,14 @@ class Hashmap {
         }
     }
 
+    /**
+     * @private
+     * @param {Cell} cell 
+     * @param {Object} t 
+     * @param {number} n 
+     * @param {BN} key 
+     * @param {boolean} fork 
+     */
     loadHashmap(cell, t, n, key, fork=false) {
         if (cell.type !== Cell.OrdinaryCell) {
             if (cell.type === Cell.PrunnedBranchCell) {
@@ -135,17 +165,26 @@ class Hashmap {
         }
     }
 
+    /**
+     * Loads hashmap from cell tree
+     * 
+     * @throws {Error}
+     * @param {Cell} cell Cell to load from 
+     * @param {Object} t Position in cell
+     */
     deserialize(cell, t) {
         this.loadHashmap(cell, t, this.n, new BN(0));
     }
 
     /**
-     * Serialize Hashmap to Cell
-     * @param cell  {Cell}
+     * Serializes Hashmap to Cell
+     * 
+     * @throws {Error}
+     * @param {Cell} cell
      */
     serialize(cell) {
         if (this.size === 0) {
-            throw "Hashmap cannot be empty";
+            throw Error("Hashmap cannot be empty");
         }
 
         let m = {};
@@ -157,6 +196,11 @@ class Hashmap {
         this.serializeBitmap(cell, m, this.n);
     }
 
+    /**
+     * @private
+     * @throws {Error}
+     * @param {Cell} cell
+     */
     serializeBitmap(cell, map, n) {
         if (map.size === 0) {
             throw "Hashmap cannot be empty";
@@ -178,7 +222,7 @@ class Hashmap {
                 const free = cell.bits.getFreeBits();
                 const need = one.bits.getUsedBits();
                 if (free < need) {
-                    throw "Cannot fit data in Cell";
+                    throw Error("Cannot fit data in Cell");
                 }
                 cell.writeCell(one);
                 return;
@@ -243,23 +287,38 @@ class Hashmap {
 }
 
 
+/**
+ * TON HashmapE class
+ */
 class HashmapE extends Hashmap {
+
     /**
-     * @param n {number}    hash bitwidth
+     * Creates empty hashmap with `n` bitwidth
+     * 
+     * @param {number} n Hash bitwidth
+     * @param {function} f Function for leaf load
      */
     constructor(n, f) {
         super(n, f);
         this._ = "HashmapE";
     }
 
+    /**
+     * Loads HashmapE from cell tree
+     * 
+     * @throws {Error}
+     * @param {Cell} cell Cell to load from 
+     * @param {Object} t Position in cell
+     */
     deserialize(cell, t) {
         // eslint-disable-next-line no-unused-vars
         loadMaybeRef(cell, t, (c,p) => this.loadHashmap(c, p, this.n, new BN(0)), (c,p) => {this.hash = c.getHash(0);});
     }
 
     /**
-     * Serialize HashmapE to Cell
-     * @param cell  {Cell}
+     * Serializes HashmapE to Cell
+     * 
+     * @param {Cell} cell
      */
     serialize(cell) {
         if (this.size === 0) {
@@ -278,9 +337,16 @@ class HashmapE extends Hashmap {
     }
 }
 
+/**
+ * TON HashmapAug class
+ */
 class HashmapAug extends Hashmap {
+
     /**
-     * @param n {number}    hash bitwidth
+     * Creates empty hashmap with `n` bitwidth
+     * 
+     * @param {number} n Hash bitwidth
+     * @param {function} f Function for leaf load
      */
     constructor(n, f) {
         super(n, f);
@@ -288,9 +354,16 @@ class HashmapAug extends Hashmap {
     }
 }
 
+/**
+ * TON HashmapAugE class
+ */
 class HashmapAugE extends HashmapE {
+
     /**
-     * @param n {number}    hash bitwidth
+     * Creates empty hashmap with `n` bitwidth
+     * 
+     * @param {number} n Hash bitwidth
+     * @param {function} f Function for leaf load
      */
     constructor(n, f) {
         super(n, f);

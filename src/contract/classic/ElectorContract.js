@@ -1,19 +1,31 @@
-const {Address, Cell} = require("../../types");
-const {BN, toNano, bytesToHex, hexToBytes, nacl, stringToBytes, bytesToBase64} = require("../../utils");
+const {BN} = require("../../utils");
 const {ClassicContract} = require("../ClassicContract.js");
 
 
-
+/**
+ * Elector contract interface
+ */
 class ElectorContract extends ClassicContract {
-
-    constructor(options, provider) {
-        super(options, provider);
+    /**
+     * @param {Object} options 
+     * @param {Object} provider 
+     * @param {Object} storage 
+     * @param {Object} client 
+     * @param {Object} config
+     */
+    constructor(options, provider, storage, client, config) {
+        super(options, provider, storage, client, config);
 
         this.methods = {
+            /**
+             * Get method `participant_list`
+             * 
+             * @returns {{runLocal:Function}}
+             */
             participant_list: () => {
                 return {
                     /**
-                     * @return {Promise<list>}
+                     * @return {Promise<Object>}
                      */
                     runLocal: async (p={}) => {
                         const res = await this._runGetMethod('participant_list', p);
@@ -34,10 +46,15 @@ class ElectorContract extends ClassicContract {
                     }
                 }
             },
+            /**
+             * Get method `participant_list_extended`
+             * 
+             * @returns {{runLocal:Function}}
+             */
             participant_list_extended: () => {
                 return {
                     /**
-                     * @return {Promise<list>}
+                     * @return {Promise<Object>}
                      */
                     runLocal: async (p={}) => {
                         const res = await this._runGetMethod('participant_list_extended', p);
@@ -69,6 +86,11 @@ class ElectorContract extends ClassicContract {
                     }
                 }
             },
+            /**
+             * Get method `active_election_id`
+             * 
+             * @returns {{runLocal:Function}}
+             */
             active_election_id: () => {
                 return {
                     /**
@@ -80,6 +102,11 @@ class ElectorContract extends ClassicContract {
                     }
                 }
             },
+            /**
+             * Get method `compute_returned_stake`
+             * 
+             * @returns {{runLocal:Function}}
+             */
             compute_returned_stake: () => {
                 return {
                     /**

@@ -2,7 +2,7 @@ const {BN, bytesToHex} = require("../utils");
 
 class BitString {
     /**
-     * @param length {number}    length of BitString in bits
+     * @param {number} length Length of BitString in bits
      */
     constructor(length) {
         this.array = Uint8Array.from({length: Math.ceil(length / 8)}, () => 0);
@@ -32,17 +32,21 @@ class BitString {
     }
 
     /**
-     * @param n {number}
-     * @return {boolean}    bit value at position `n`
+     * Gets n-th bit
+     * 
+     * @param {number} n
+     * @return {boolean} Bit value at position `n`
      */
     get(n) {
         return (this.array[(n / 8) | 0] & (1 << (7 - (n % 8)))) > 0;
     }
 
     /**
-     * @param start {number}
-     * @param n {number}
-     * @return {Uint8Array}    [start:start+n] bits
+     * Gets `n` length bit range from `start` position
+     * 
+     * @param {number} start Start position
+     * @param {number} n
+     * @return {Uint8Array} [start:start+n] bits
      */
     getRange(start, n) {
         let array = Uint8Array.from({length: Math.ceil(n / 8)}, () => 0);
@@ -60,10 +64,11 @@ class BitString {
     }
 
     /**
-     * Read unsigned int
-     * @param start {number}
-     * @param bitLength  {number}  size of uint in bits
-     * @param number  {BN}
+     * Reads unsigned int
+     * 
+     * @param {number} start Start position
+     * @param {number} bitLength Size of uint in bits
+     * @returns {BN} number
      */
     readUint(start, bitLength) {
         if (bitLength < 1) {
@@ -81,34 +86,76 @@ class BitString {
         return new BN(s, 2);
     }
 
+    /**
+     * Reads Uint8
+     * 
+     * @param {number} start Start position
+     * @returns {number}
+     */
     readUint8(start) {
         return this.readUint(start, 8).toNumber();
     }
 
+    /**
+     * Reads Uint16
+     * 
+     * @param {number} start Start position
+     * @returns {number}
+     */
     readUint16(start) {
         return this.readUint(start, 16).toNumber();
     }
 
+    /**
+     * Reads Uint32
+     * 
+     * @param {number} start Start position
+     * @returns {number}
+     */
     readUint32(start) {
         return this.readUint(start, 32).toNumber();
     }
 
+    /**
+     * Reads Uint64
+     * 
+     * @param {number} start Start position
+     * @returns {BN}
+     */
     readUint64(start) {
         return this.readUint(start, 64);
     }
 
+    /**
+     * Reads Int8
+     * 
+     * @param {number} start Start position
+     * @returns {number}
+     */
     readInt8(start) {
         let data = this.getRange(start, 8);
         var dataView = new DataView(data.buffer);
         return dataView.getInt8(0);
     }
 
+    /**
+     * Reads Int16
+     * 
+     * @param {number} start Start position
+     * @returns {number}
+     */
     readInt16(start) {
         let data = this.getRange(start, 16);
         var dataView = new DataView(data.buffer);
         return dataView.getInt16(0, false);
     }
 
+    /**
+     * Reads Int32
+     * 
+     * @param {number} start Start position
+     * @returns {number}
+     */
     readInt32(start) {
         let data = this.getRange(start, 32);
         var dataView = new DataView(data.buffer);
@@ -117,7 +164,7 @@ class BitString {
 
     /**
      * @private
-     * @param n {number}
+     * @param {number} n
      */
     checkRange(n) {
         if (n > this.length) {
@@ -126,8 +173,9 @@ class BitString {
     }
 
     /**
-     * Set bit value to 1 at position `n`
-     * @param n {number}
+     * Sets bit value to 1 at position `n`
+     * 
+     * @param {number} n
      */
     on(n) {
         this.checkRange(n);
@@ -135,8 +183,9 @@ class BitString {
     }
 
     /**
-     * Set bit value to 0 at position `n`
-     * @param n {number}
+     * Sets bit value to 0 at position `n`
+     * 
+     * @param {number} n
      */
     off(n) {
         this.checkRange(n);
@@ -144,8 +193,9 @@ class BitString {
     }
 
     /**
-     * Toggle bit value at position `n`
-     * @param n {number}
+     * Toggles bit value at position `n`
+     * 
+     * @param {number} n
      */
     toggle(n) {
         this.checkRange(n);
@@ -154,7 +204,8 @@ class BitString {
 
     /**
      * forEach every bit
-     * @param callback  {function(boolean): void}
+     * 
+     * @param {function(boolean): void} callback
      */
     forEach(callback) {
         const max = this.cursor;
@@ -164,8 +215,9 @@ class BitString {
     }
 
     /**
-     * Write bit and increase cursor
-     * @param b  {boolean | number}
+     * Writes bit and increase cursor
+     * 
+     * @param {boolean | number} b
      */
     writeBit(b) {
         if (b && b > 0) {
@@ -177,7 +229,9 @@ class BitString {
     }
 
     /**
-     * @param ba  {Array<boolean | number>}
+     * Writes bit array
+     * 
+     * @param {Array<boolean | number>} ba
      */
     writeBitArray(ba) {
         for (let i = 0; i < ba.length; i++) {
@@ -186,9 +240,10 @@ class BitString {
     }
 
     /**
-     * Write unsigned int
-     * @param number  {number | BN}
-     * @param bitLength  {number}  size of uint in bits
+     * Writes unsigned int
+     * 
+     * @param {number | BN} number Number to write
+     * @param {number} bitLength Size of uint in bits
      */
     writeUint(number, bitLength) {
         number = new BN(number);
@@ -206,9 +261,10 @@ class BitString {
     }
 
     /**
-     * Write signed int
-     * @param number  {number | BN}
-     * @param bitLength  {number}  size of int in bits
+     * Writes signed int
+     * 
+     * @param {number | BN} number Number to write
+     * @param {number} bitLength Size of int in bits
      */
     writeInt(number, bitLength) {
         number = new BN(number);
@@ -236,16 +292,18 @@ class BitString {
     }
 
     /**
-     * Write unsigned 8-bit int
-     * @param ui8 {number}
+     * Writes unsigned 8-bit int
+     * 
+     * @param {number} ui8 Number to write
      */
     writeUint8(ui8) {
         this.writeUint(ui8, 8);
     }
 
     /**
-     * Write array of unsigned 8-bit ints
-     * @param ui8 {Uint8Array}
+     * Writes array of unsigned 8-bit ints
+     * 
+     * @param {Uint8Array} ui8 Array to write
      */
     writeBytes(ui8) {
         for (let i = 0; i < ui8.length; i++) {
@@ -254,7 +312,9 @@ class BitString {
     }
 
     /**
-     * @param s {string}
+     * Writes string
+     * 
+     * @param {string} s String to write
      */
     writeString(s) {
         for (let i = 0; i < s.length; i++) {
@@ -263,7 +323,9 @@ class BitString {
     }
 
     /**
-     * @param amount  {number | BN} in nanograms
+     * Writes grams value 
+     * 
+     * @param {number | BN} amount Amount in nanograms
      */
     writeGrams(amount) {
         if (amount == 0) {
@@ -276,11 +338,14 @@ class BitString {
         }
     }
 
-    //addr_none$00 = MsgAddressExt;
-    //addr_std$10 anycast:(Maybe Anycast)
-    // workchain_id:int8 address:uint256 = MsgAddressInt;
     /**
-     * @param address {Address | null}
+     * Writes TON address  <br>
+     * 
+     * addr_none$00 = MsgAddressExt; <br>
+     * addr_std$10 anycast:(Maybe Anycast) <br>
+     * workchain_id:int8 address:uint256 = MsgAddressInt; <br>
+     * 
+     * @param {Address | null} address Address to write
      */
     writeAddress(address) {
         if (address == null) {
@@ -294,8 +359,9 @@ class BitString {
     }
 
     /**
-     * write another BitString to this BitString
-     * @param anotherBitString  {BitString}
+     * Writes another BitString to this BitString
+     * 
+     * @param {BitString} anotherBitString
      */
     writeBitString(anotherBitString) {
         anotherBitString.forEach(x => {
@@ -303,6 +369,11 @@ class BitString {
         });
     }
 
+    /**
+     * Clones this bitstring to new
+     * 
+     * @returns {BitString}
+     */
     clone() {
         const result = new BitString(0);
         result.array = this.array.slice(0);
@@ -312,6 +383,8 @@ class BitString {
     }
 
     /**
+     * Gets string hex representation of bit string
+     * 
      * @return {string} hex
      */
     toString() {
@@ -319,6 +392,8 @@ class BitString {
     }
 
     /**
+     * Gets Top Upped Array (see TON docs)
+     * 
      * @return {Uint8Array}
      */
     getTopUppedArray() {
@@ -338,8 +413,9 @@ class BitString {
     }
 
     /**
-     * like Fift
-     * @return {string}
+     * Gets hex representation of bit string
+     * 
+     * @return {string} hex
      */
     toHex() {
         if (this.cursor % 4 === 0) {
@@ -361,9 +437,10 @@ class BitString {
     }
 
     /**
-     * set this cell data to match provided topUppedArray
-     * @param array  {Uint8Array}
-     * @param fullfilledBytes  {boolean}
+     * Sets this cell data to match provided topUppedArray
+     * 
+     * @param {Uint8Array} array Array to copy from
+     * @param {boolean} fullfilledBytes Is bytes in array fullfiled
      */
     setTopUppedArray(array, fullfilledBytes = true) {
         this.length = array.length * 8;
