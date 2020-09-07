@@ -14,7 +14,7 @@ const ClassicContracts = require("./contract/classic");
 const ClassicWallets = require("./contract/classic/wallet");
 
 const bc = require("./blockchain");
-const {BrowserStorage} = require("./providers/Storage");
+const Storages = require("./providers/Storage");
 
 const version = '0.1.0';
 
@@ -32,7 +32,7 @@ class TonRocks {
             this.bc.Block._storage = storage;
         }
         else if (typeof window !== 'undefined') {
-            this.bc.Block._storage = new BrowserStorage('default');
+            this.bc.Block._storage = new Storages.BrowserStorage('default');
         }
 
         this.Contract = Contract;
@@ -45,7 +45,7 @@ class TonRocks {
 
         this.providers = providers;
         this.configs = configs;
-        this.storages = {BrowserStorage};
+        this.storages = Storages;
     }
 }
 
@@ -65,7 +65,7 @@ TonRocks.ClassicContracts = ClassicContracts;
 
 TonRocks.providers = providers;
 TonRocks.configs = configs;
-TonRocks.storages = {BrowserStorage};
+TonRocks.storages = Storages;
 
 if (typeof window !== 'undefined') {
     window.TonRocks = TonRocks;

@@ -124,4 +124,22 @@ class BrowserStorage extends Storage {
     }
 }
 
-module.exports = {Storage, BrowserStorage};
+
+class DummyStorage extends Storage {
+    constructor(zerohash) {
+        super(zerohash);
+    }
+    
+    /**
+     * @private
+     */
+    _save() {}
+
+    /**
+     * @private
+     */
+    _load() {}
+}
+
+
+module.exports = {Storage, BrowserStorage, DummyStorage};

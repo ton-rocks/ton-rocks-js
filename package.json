@@ -4,6 +4,7 @@
   "description": "Ton Rocks JS - JavaScript API for TON (Telegram Open Network)",
   "main": "src/index.js",
   "scripts": {
+    "install": "cd src/tvm && cd browser && node install.js && node postinstall.js && cd ../nodejs && node install.js && node postinstall.js",
     "test": "webpack-dev-server --config webpack.dev.js",
     "build": "webpack --config webpack.prod.js",
     "lint": "eslint ./src",
@@ -42,8 +43,7 @@
     "bip39": "^3.0.2",
     "bn.js": "^5.1.1",
     "ethjs-unit": "^0.1.6",
-    "madeline-ton": "https://github.com/ton-rocks/madelineTon.js",
-    "ton-client-web-js": "^0.25.1",
+    "madeline-ton": "../madelineTon.js",
     "tweetnacl": "^1.0.3",
     "xmlhttprequest": "^1.8.0"
   },
@@ -56,6 +56,7 @@
     "webpack-merge": "^5.0.9"
   },
   "browser": {
+    "./src/tvm/nodejs/TvmClient.js": "./src/tvm/browser/TvmClient.js",
     "crypto": false,
     "xmlhttprequest": false
   }

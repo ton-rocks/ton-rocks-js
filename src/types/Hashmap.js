@@ -26,8 +26,24 @@ class Hashmap {
         this._ = "Hashmap";
     }
 
+    /**
+     * Stringify map
+     */
+    async stringify(f) {
+        let res = {
+            _: this._,
+            prunned: this.prunned,
+            n: this.n,
+            map: {}
+        };
+        for (let [key, value] of this.map) {
+            res.map[key] = await f(value);
+        }
+        return res;
+    }
+
     /*
-    Map key is {number | BN}
+    Map key is string in hex
     */
 
     /*
@@ -188,8 +204,8 @@ class Hashmap {
         }
 
         let m = {};
-        for (let k of this.keys()) {
-            let kn = new BN(k);
+        for (let k of this.map.keys()) {
+            let kn = new BN(k, 16);
             m[kn.toString(2, this.n)] = this.map.get(k);
         }
 

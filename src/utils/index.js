@@ -129,7 +129,7 @@ function hexToBytes(s) {
     s = s.toLowerCase();
     const length2 = s.length;
     if (length2 % 2 !== 0) {
-        throw "hex string must have length a multiple of 2";
+        throw Error("hex string must have length a multiple of 2");
     }
     const length = length2 / 2;
     const result = new Uint8Array(length);
@@ -322,7 +322,7 @@ function bytesToBase64(bytes) {
  */
 function base64toString(base64) {
     if (typeof window === 'undefined') {
-        return new Buffer(base64, 'base64').toString('binary');
+        return Buffer.from(base64, 'base64').toString('binary');
     } else {
         return atob(base64);
     }

@@ -1,8 +1,7 @@
-const {TONClient, setWasmOptions} = require('ton-client-web-js');
 const {stringToBytes, bytesToString, bytesToBase64, base64ToBytes, bytesToHex, BN, compareBytes} = require('../utils');
 const {Address, Cell} = require('../types');
 const {Block} = require('../blockchain/Block');
-
+const {TvmClient, setWasmOptions} = require('../tvm/nodejs/TvmClient.js');
 
 const AccountType =
 {
@@ -113,11 +112,13 @@ const TransactionType =
  * Transaction id type    <br>
  * 
  * interface TransactionId {    <br>
+ *   id: string;    <br>
  *   lt: BN;    <br>
  *   hash: Uint8Array;    <br>
  * }    <br>
  * 
  * @typedef {Object} TransactionId
+ * @property {string} id Transaction id
  * @property {BN} lt Logical time
  * @property {Uint8Array} hash Representation hash
  */
@@ -126,7 +127,7 @@ const TransactionType =
  * Transaction type    <br>
  * 
  *  interface Transaction {    <br>
- *    id: string; // hash in hex    <br>
+ *    id: string;   <br>
  *    hash: Uint8Array;    <br>
  *    
  *    type: TransactionType;    <br>
@@ -155,7 +156,7 @@ const TransactionType =
  *  }    <br>
  * 
  * @typedef {Object} Transaction
- * @property {string} id Representation hash in hex format
+ * @property {string} id Transaction id
  * @property {Uint8Array} hash Hash
  * @property {TransactionType} type Transaction type
  * @property {BN} lt Logical time
@@ -261,13 +262,14 @@ class Contract {
     if (Contract._client)
       return;
 
-    setWasmOptions({
-        debugLog: Contract.debugLog
-    });
+    if (setWasmOptions !== undefined) {
+      setWasmOptions({
+          debugLog: Contract.debugLog
+      });
+    }
 
-    Contract._client = (await TONClient.create({
-        servers: ['']
-    })).contracts;
+    Contract._client = new TvmClient();
+    await Contract._client.getCoreBridge();
   }
 
   /**
@@ -456,6 +458,7 @@ class Contract {
     _account.address = Address.fromBytes(account.account.addr.workchain_id, account.account.addr.address);
     _account.id = _account.address.toString(false);
     _account.last_trans_id = {
+      id: _account.id + ':' + account.lastTransLt.toString(10) + ':' + bytesToHex(account.lastTransHash),
       lt: account.lastTransLt,
       hash: account.lastTransHash
     };
@@ -515,6 +518,7 @@ class Contract {
    * @returns {Message}
    */
   async _convertMessage(msg, incompleteBody=false) {
+    if (msg === undefined) return undefined;
     if (msg._ !== 'Message') throw Error('not a Message');
 
     let _msg = {};
@@ -589,15 +593,22 @@ class Contract {
     let _trans = {};
     _trans.raw = trans;
 
+    _trans.workchain_id = blockId.workchain;
+    _trans.account_addr = Address.fromBytes(blockId.workchain, trans.account_addr);
+    _trans.account_id = _trans.account_addr.toString(false);
+
     _trans.block_id = blockId;
     _trans.hash = trans.hash;
-    _trans.id = bytesToHex(trans.hash);
 
     _trans.lt = trans.lt;
     _trans.prev_trans_id = {
+      id: _trans.account_id + ':' + trans.prev_trans_lt.toString(10) + ':' + bytesToHex(trans.prev_trans_hash),
       lt: trans.prev_trans_lt,
       hash: trans.prev_trans_hash
     };
+
+    _trans.id = _trans.account_id + ':' + _trans.lt.toString(10) + ':' + bytesToHex(trans.hash);
+
     _trans.now = trans.now;
     _trans.total_fees = trans.total_fees.grams.amount.value;
     _trans.orig_status = this._convertAccountStatus(trans.orig_status);
@@ -627,10 +638,6 @@ class Contract {
 
     _trans.old_hash = trans.state_update.old_hash;
     _trans.new_hash = trans.state_update.new_hash;
-
-    _trans.workchain_id = blockId.workchain;
-    _trans.account_addr = Address.fromBytes(blockId.workchain, trans.account_addr);
-    _trans.account_id = _trans.account_addr.toString(false);
 
     return _trans;
   }
