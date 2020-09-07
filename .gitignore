@@ -8,5 +8,4 @@ src/tvm/browser/tonclient.wasm
 src/tvm/browser/index.js
 src/tvm/browser/TvmClient.js
 src/tvm/nodejs/tonclient.node
-src/tvm/nodejs/index.js
 src/tvm/nodejs/TvmClient.js
