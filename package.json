@@ -43,7 +43,7 @@
     "bip39": "^3.0.2",
     "bn.js": "^5.1.1",
     "ethjs-unit": "^0.1.6",
-    "madeline-ton": "../madelineTon.js",
+    "madeline-ton": "https://github.com/ton-rocks/madelineTon.js",
     "tweetnacl": "^1.0.3",
     "xmlhttprequest": "^1.8.0"
   },
