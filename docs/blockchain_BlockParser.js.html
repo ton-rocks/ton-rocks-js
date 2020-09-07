@@ -1,0 +1,3090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: blockchain/BlockParser.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: blockchain/BlockParser.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const {Cell} = require("../types/Cell");
+const {Hashmap, HashmapE, HashmapAug, HashmapAugE} = require("../types/Hashmap");
+const {BN, compareBytes} = require("../utils");
+const {
+  loadUint,
+  loadUint8,
+  loadUint16,
+  loadUint32,
+  loadUint64,
+  loadInt8,
+  // eslint-disable-next-line no-unused-vars
+  loadInt16,
+  loadInt32,
+  loadBit,
+  loadBits,
+  loadBool,
+  loadUintLeq,
+  // eslint-disable-next-line no-unused-vars
+  loadUintLess,
+  loadVarUInteger,
+  loadGrams,
+  loadRefIfExist,
+  loadMaybe,
+  loadMaybeRef,
+  loadEither
+} = require("./BlockUtils");
+
+
+/**
+ * Loads Hashmap
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @param {number} n Hashmap dimention
+ * @param {Function} f Function for leaf
+ * @returns {Hashmap}
+ */
+function loadHashmap(cell, t, n, f) {
+  let data = new Hashmap(n, f);
+  data.deserialize(cell, t);
+  return data;
+}
+
+/**
+ * Loads HashmapE
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @param {number} n Hashmap dimention
+ * @param {Function} f Function for leaf
+ * @returns {HashmapE}
+ */
+function loadHashmapE(cell, t, n, f) {
+  let data = new HashmapE(n, f);
+  data.deserialize(cell, t);
+  return data;
+}
+
+/**
+ * Loads HashmapAug
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @param {number} n Hashmap dimention
+ * @param {Function} f1 Function for value leaf
+ * @param {Function} f2 Function for extra leaf
+ * @returns {HashmapAug}
+ */
+function loadHashmapAug(cell, t, n, f1, f2) {
+  let data = new HashmapAug(n, (c,p) => {return {"extra": f2(c,p), "value": f1(c,p)};});
+  data.deserialize(cell, t);
+  return data;
+}
+
+/**
+ * Loads HashmapAugE
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @param {number} n Hashmap dimention
+ * @param {Function} f1 Function for value leaf
+ * @param {Function} f2 Function for extra leaf
+ * @returns {HashmapAugE}
+ */
+function loadHashmapAugE(cell, t, n, f1, f2) {
+  let data = new HashmapAugE(n, (c,p) => {return {"extra": f2(c,p), "value": f1(c,p)};});
+  data.deserialize(cell, t);
+  return data;
+}
+
+
+function loadBinTreeR(cell, t, f) {
+  let data = {};
+  if (loadBit(cell, t) === 0) {
+    data.type = "leaf";
+    data.leaf = f ? f(cell, t) : null;
+    return data;
+  }
+  else {
+    data.type = "fork";
+    data.left = loadRefIfExist(cell, t, (c,p) => loadBinTreeR(c, p, f));
+    data.right = loadRefIfExist(cell, t, (c,p) => loadBinTreeR(c, p, f));
+    return data;
+  }
+}
+
+/**
+ * Loads BinTree  &lt;br>
+ * 
+ * bt_leaf$0 {X:Type} leaf:X = BinTree X; &lt;br>
+ * bt_fork$1 {X:Type} left:^(BinTree X) right:^(BinTree X) &lt;br>
+ * = BinTree X;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @param {Function} f Function for leaf
+ * @returns {Object}
+ */
+function loadBinTree(cell, t, f) {
+  let data = loadBinTreeR(cell, t, f);
+  data._ = "BinTree";
+  return data;
+}
+
+
+/**
+ * Loads ConfigParam 0  &lt;br>
+ * 
+ * _ config_addr:bits256 = ConfigParam 0;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam0(cell, t) {
+  let data = {_:"ConfigParam", number: 0};
+  data.config_addr = loadBits(cell, t, 256);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 1  &lt;br>
+ * 
+ * _ elector_addr:bits256 = ConfigParam 1;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam1(cell, t) {
+  let data = {_:"ConfigParam", number: 1};
+  data.elector_addr = loadBits(cell, t, 256);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 2  &lt;br>
+ * 
+ * _ minter_addr:bits256 = ConfigParam 2;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam2(cell, t) {
+  let data = {_:"ConfigParam", number: 2};
+  data.minter_addr = loadBits(cell, t, 256);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 3  &lt;br>
+ * 
+ * _ fee_collector_addr:bits256 = ConfigParam 3;  // ConfigParam 1 is used if absent
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam3(cell, t) {
+  let data = {_:"ConfigParam", number: 3};
+  data.fee_collector_addr = loadBits(cell, t, 256);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 4  &lt;br>
+ * 
+ * _ dns_root_addr:bits256 = ConfigParam 4;  // root TON DNS resolver
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam4(cell, t) {
+  let data = {_:"ConfigParam", number: 4};
+  data.dns_root_addr = loadBits(cell, t, 256);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 6  &lt;br>
+ * 
+ * _ mint_new_price:Grams mint_add_price:Grams = ConfigParam 6;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam6(cell, t) {
+  let data = {_:"ConfigParam", number: 6};
+  data.mint_new_price = loadGrams(cell, t);
+  data.mint_add_price = loadGrams(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 7  &lt;br>
+ * 
+ * _ to_mint:ExtraCurrencyCollection = ConfigParam 7;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam7(cell, t) {
+  let data = {_:"ConfigParam", number: 7};
+  data.to_mint = loadExtraCurrencyCollection(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 8  &lt;br>
+ * 
+ * _ GlobalVersion = ConfigParam 8;  // all zero if absent
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam8(cell, t) {
+  let data = {_:"ConfigParam", number: 8};
+  data.version = loadGlobalVersion(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 9  &lt;br>
+ * 
+ * _ mandatory_params:(Hashmap 32 True) = ConfigParam 9;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam9(cell, t) {
+  let data = {_:"ConfigParam", number: 9};
+  // eslint-disable-next-line no-unused-vars
+  data.mandatory_params = loadHashmap(cell, t, 32, (c,p) => true);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 10  &lt;br>
+ * 
+ * _ critical_params:(Hashmap 32 True) = ConfigParam 10;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam10(cell, t) {
+  let data = {_:"ConfigParam", number: 10};
+  // eslint-disable-next-line no-unused-vars
+  data.critical_params = loadHashmap(cell, t, 32, (c,p) => true);
+  return data;
+}
+
+/**
+ * Loads ConfigProposalSetup  &lt;br>
+ * 
+ * cfg_vote_cfg#36 min_tot_rounds:uint8 max_tot_rounds:uint8 min_wins:uint8 max_losses:uint8 min_store_sec:uint32 max_store_sec:uint32 bit_price:uint32 cell_price:uint32 = ConfigProposalSetup;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigProposalSetup(cell, t) {
+  let data = {_:"ConfigProposalSetup"};
+  if (loadUint8(cell, t) !== 0x36)
+    throw Error('Not a ConfigProposalSetup');
+  data.min_tot_rounds = loadUint8(cell, t);
+  data.max_tot_rounds = loadUint8(cell, t);
+  data.min_wins = loadUint8(cell, t);
+  data.max_losses = loadUint8(cell, t);
+  data.min_store_sec = loadUint32(cell, t);
+  data.max_store_sec = loadUint32(cell, t);
+  data.bit_price = loadUint32(cell, t);
+  data.cell_price = loadUint32(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigVotingSetup  &lt;br>
+ * 
+ * cfg_vote_setup#91 normal_params:^ConfigProposalSetup critical_params:^ConfigProposalSetup = ConfigVotingSetup;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigVotingSetup(cell, t) {
+  let data = {_:"ConfigVotingSetup"};
+  if (loadUint8(cell, t) !== 0x91)
+    throw Error('Not a ConfigVotingSetup');
+  data.normal_params = loadRefIfExist(cell, t, loadConfigProposalSetup);
+  data.critical_params = loadRefIfExist(cell, t, loadConfigProposalSetup);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 11  &lt;br>
+ * 
+ * _ ConfigVotingSetup = ConfigParam 11;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam11(cell, t) {
+  let data = {_:"ConfigParam", number: 11};
+  data.setup = loadConfigVotingSetup(cell, t);
+  return data;
+}
+
+/**
+ * Loads WorkchainFormat  &lt;br>
+ * 
+ * wfmt_basic#1 vm_version:int32 vm_mode:uint64 = WorkchainFormat 1;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadWorkchainFormat1(cell, t) {
+  let data = {_:"WorkchainFormat"};
+  data.type = 'basic';
+  if (loadUint(cell, t, 4).toNumber() !== 0x1)
+    throw Error('not a WorkchainFormat');
+  data.vm_version = loadInt32(cell, t);
+  data.vm_mode = loadUint64(cell, t);
+  return data;
+}
+
+/**
+ * Loads WorkchainDescr  &lt;br>
+ * 
+ * workchain#a6 enabled_since:uint32 actual_min_split:(## 8)  &lt;br>
+ *   min_split:(## 8) max_split:(## 8) { actual_min_split &lt;= min_split } &lt;br>
+ * //workchain#a5 enabled_since:uint32 min_split:(## 8) max_split:(## 8) &lt;br>
+ * //  { min_split &lt;= max_split } { max_split &lt;= 60 } &lt;br>
+ *   basic:(## 1) active:Bool accept_msgs:Bool flags:(## 13) { flags = 0 } &lt;br>
+ *   zerostate_root_hash:bits256 zerostate_file_hash:bits256 &lt;br>
+ *   version:uint32 format:(WorkchainFormat basic) &lt;br>
+ *   = WorkchainDescr;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadWorkchainDescr(cell, t) {
+  let data = {_:"WorkchainDescr"};
+  if (loadUint8(cell, t) !== 0xa6)
+    throw Error('not a WorkchainDescr');
+  data.enabled_since = loadUint32(cell, t);
+  data.actual_min_split = loadUint(cell, t, 8).toNumber();
+  data.min_split = loadUint(cell, t, 8).toNumber();
+  data.max_split = loadUint(cell, t, 8).toNumber();
+  if (data.actual_min_split > data.min_split)
+    throw Error('data.actual_min_split > data.min_split');
+  data.basic = loadUint(cell, t, 1).toNumber();
+  data.active = loadBool(cell, t);
+  data.accept_msgs = loadBool(cell, t);
+  data.flags = loadUint(cell, t, 13).toNumber();
+  if (data.flags !== 0)
+    throw Error('data.flags');
+  data.zerostate_root_hash = loadBits(cell, t, 256);
+  data.zerostate_file_hash = loadBits(cell, t, 256);
+  data.version = loadUint32(cell, t);
+  data.format = loadWorkchainFormat1(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 12  &lt;br>
+ * 
+ * _ workchains:(HashmapE 32 WorkchainDescr) = ConfigParam 12;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam12(cell, t) {
+  let data = {_:"ConfigParam", number: 12};
+  data.workchains = loadHashmapE(cell, t, 32, loadWorkchainDescr);
+  return data;
+}
+
+/**
+ * Loads ComplaintPricing  &lt;br>
+ * 
+ * complaint_prices#1a deposit:Grams bit_price:Grams cell_price:Grams = ComplaintPricing; 
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadComplaintPricing(cell, t) {
+  let data = {_:"ComplaintPricing"};
+  if (loadUint8(cell, t) !== 0x1a)
+    throw Error('not a ComplaintPricing');
+  data.deposit = loadGrams(cell, t);
+  data.bit_price = loadGrams(cell, t);
+  data.cell_price = loadGrams(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 13  &lt;br>
+ * 
+ * _ ComplaintPricing = ConfigParam 13;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam13(cell, t) {
+  let data = {_:"ConfigParam", number: 13};
+  data.pricing = loadComplaintPricing(cell, t);
+  return data;
+}
+
+/**
+ * Loads BlockCreateFees  &lt;br>
+ * 
+ * block_grams_created#6b masterchain_block_fee:Grams basechain_block_fee:Grams &lt;br>
+ *   = BlockCreateFees;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadBlockCreateFees(cell, t) {
+  let data = {_:"BlockCreateFees"};
+  if (loadUint8(cell, t) !== 0x6b)
+    throw Error('not a BlockCreateFees');
+  data.masterchain_block_fee = loadGrams(cell, t);
+  data.basechain_block_fee = loadGrams(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 14  &lt;br>
+ * 
+ * _ BlockCreateFees = ConfigParam 14;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam14(cell, t) {
+  let data = {_:"ConfigParam", number: 14};
+  data.fees = loadBlockCreateFees(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 15  &lt;br>
+ * 
+ * _ validators_elected_for:uint32 elections_start_before:uint32  &lt;br>
+ *   elections_end_before:uint32 stake_held_for:uint32 &lt;br>
+ *   = ConfigParam 15;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam15(cell, t) {
+  let data = {_:"ConfigParam", number: 15};
+  data.validators_elected_for = loadUint32(cell, t);
+  data.elections_start_before = loadUint32(cell, t);
+  data.elections_end_before = loadUint32(cell, t);
+  data.stake_held_for = loadUint32(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 16  &lt;br>
+ * 
+ * _ max_validators:(## 16) max_main_validators:(## 16) min_validators:(## 16)  &lt;br>
+ *   { max_validators >= max_main_validators }  &lt;br>
+ *   { max_main_validators >= min_validators }  &lt;br>
+ *   { min_validators >= 1 } &lt;br>
+ *   = ConfigParam 16;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam16(cell, t) {
+  let data = {_:"ConfigParam", number: 16};
+  data.max_validators = loadUint(cell, t, 16).toNumber();
+  data.max_main_validators = loadUint(cell, t, 16).toNumber();
+  data.min_validators = loadUint(cell, t, 16).toNumber();
+  if (data.max_validators &lt; data.max_main_validators)
+    throw Error('data.max_validators &lt; data.max_main_validators');
+  if (data.max_main_validators &lt; data.min_validators)
+    throw Error('data.max_main_validators &lt; data.min_validators');
+  if (data.min_validators &lt; 1)
+    throw Error('data.min_validators &lt; 1');
+  return data;
+}
+
+/**
+ * Loads ConfigParam 17  &lt;br>
+ * 
+ * _ min_stake:Grams max_stake:Grams min_total_stake:Grams max_stake_factor:uint32 = ConfigParam 17;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam17(cell, t) {
+  let data = {_:"ConfigParam", number: 17};
+  data.min_stake = loadGrams(cell, t);
+  data.max_stake = loadGrams(cell, t);
+  data.min_total_stake = loadGrams(cell, t);
+  data.max_stake_factor = loadUint32(cell, t);
+  return data;
+}
+
+/**
+ * Loads StoragePrices  &lt;br>
+ * 
+ * _#cc utime_since:uint32 bit_price_ps:uint64 cell_price_ps:uint64  &lt;br>
+ *   mc_bit_price_ps:uint64 mc_cell_price_ps:uint64 = StoragePrices;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadStoragePrices(cell, t) {
+  let data = {_:"StoragePrices"};
+  if (loadUint8(cell, t) !== 0xcc)
+    throw Error('not a StoragePrices');
+  data.utime_since = loadUint32(cell, t);
+  data.bit_price_ps = loadUint64(cell, t);
+  data.cell_price_ps = loadUint64(cell, t);
+  data.mc_bit_price_ps = loadUint64(cell, t);
+  data.mc_cell_price_ps = loadUint64(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 18  &lt;br>
+ * 
+ * _ (Hashmap 32 StoragePrices) = ConfigParam 18;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam18(cell, t) {
+  let data = {_:"ConfigParam", number: 18};
+  data.prices = loadHashmap(cell, t, 32, loadStoragePrices);
+  return data;
+}
+
+/**
+ * Loads GasLimitsPrices  &lt;br>
+ * 
+ * gas_prices#dd gas_price:uint64 gas_limit:uint64 gas_credit:uint64  &lt;br>
+ *   block_gas_limit:uint64 freeze_due_limit:uint64 delete_due_limit:uint64  &lt;br>
+ *   = GasLimitsPrices; &lt;br>
+ * 
+ * gas_prices_ext#de gas_price:uint64 gas_limit:uint64 special_gas_limit:uint64 gas_credit:uint64  &lt;br>
+ *   block_gas_limit:uint64 freeze_due_limit:uint64 delete_due_limit:uint64  &lt;br>
+ *   = GasLimitsPrices; &lt;br>
+ * 
+ * gas_flat_pfx#d1 flat_gas_limit:uint64 flat_gas_price:uint64 other:GasLimitsPrices &lt;br>
+ *   = GasLimitsPrices;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadGasLimitsPrices(cell, t) {
+  let data = {_:"GasLimitsPrices"};
+  let type = loadUint8(cell, t);
+  if (type === 0xdd) {
+    data.type = '';
+    data.gas_price = loadUint64(cell, t);
+    data.gas_limit = loadUint64(cell, t);
+    data.gas_credit = loadUint64(cell, t);
+    data.block_gas_limit = loadUint64(cell, t);
+    data.freeze_due_limit = loadUint64(cell, t);
+    data.delete_due_limit = loadUint64(cell, t);
+    return data;
+  }
+  else if (type === 0xde) {
+    data.type = 'ext';
+    data.gas_price = loadUint64(cell, t);
+    data.gas_limit = loadUint64(cell, t);
+    data.special_gas_limit = loadUint64(cell, t);
+    data.gas_credit = loadUint64(cell, t);
+    data.block_gas_limit = loadUint64(cell, t);
+    data.freeze_due_limit = loadUint64(cell, t);
+    data.delete_due_limit = loadUint64(cell, t);
+    return data;
+  }
+  else if (type === 0xd1) {
+    data.type = 'pfx';
+    data.flat_gas_limit = loadUint64(cell, t);
+    data.flat_gas_price = loadUint64(cell, t);
+    data.other = loadGasLimitsPrices(cell, t);
+    return data;
+  }
+  throw Error('not a GasLimitsPrices');
+}
+
+/**
+ * Loads ConfigParam 20  &lt;br>
+ * 
+ * config_mc_gas_prices#_ GasLimitsPrices = ConfigParam 20;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam20(cell, t) {
+  let data = {_:"ConfigParam", number: 20};
+  data.prices = loadGasLimitsPrices(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 21  &lt;br>
+ * 
+ * config_gas_prices#_ GasLimitsPrices = ConfigParam 21;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam21(cell, t) {
+  let data = {_:"ConfigParam", number: 21};
+  data.prices = loadGasLimitsPrices(cell, t);
+  return data;
+}
+
+/**
+ * Loads ParamLimits  &lt;br>
+ * 
+ * param_limits#c3 underload:# soft_limit:# { underload &lt;= soft_limit } &lt;br>
+ *   hard_limit:# { soft_limit &lt;= hard_limit } = ParamLimits;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadParamLimits(cell, t) {
+  let data = {_:"ParamLimits"};
+  if (loadUint8(cell, t) !== 0xc3)
+    throw Error('not a ParamLimits');
+  data.underload = loadUint32(cell, t);
+  data.soft_limit = loadUint32(cell, t);
+  if (data.underload > data.soft_limit)
+    throw Error('data.underload > data.soft_limit');
+  data.hard_limit = loadUint32(cell, t);
+  if (data.soft_limit > data.hard_limit)
+    throw Error('data.soft_limit > data.hard_limit');
+  return data;
+}
+
+/**
+ * Loads BlockLimits  &lt;br>
+ * 
+ * block_limits#5d bytes:ParamLimits gas:ParamLimits lt_delta:ParamLimits &lt;br>
+ *   = BlockLimits;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadBlockLimits(cell, t) {
+  let data = {_:"BlockLimits"};
+  if (loadUint8(cell, t) !== 0x5d)
+    throw Error('not a BlockLimits');
+  data.bytes = loadParamLimits(cell, t);
+  data.gas = loadParamLimits(cell, t);
+  data.lt_delta = loadParamLimits(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 22  &lt;br>
+ * 
+ * config_mc_block_limits#_ BlockLimits = ConfigParam 22;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam22(cell, t) {
+  let data = {_:"ConfigParam", number: 22};
+  data.limits = loadBlockLimits(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 23  &lt;br>
+ * 
+ * config_block_limits#_ BlockLimits = ConfigParam 23;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam23(cell, t) {
+  let data = {_:"ConfigParam", number: 23};
+  data.limits = loadBlockLimits(cell, t);
+  return data;
+}
+
+/**
+ * Loads MsgForwardPrices  &lt;br>
+ * 
+ * // msg_fwd_fees = (lump_price + ceil((bit_price * msg.bits + cell_price * msg.cells)/2^16)) nanograms &lt;br>
+ * // ihr_fwd_fees = ceil((msg_fwd_fees * ihr_price_factor)/2^16) nanograms &lt;br>
+ * // bits in the root cell of a message are not included in msg.bits (lump_price pays for them) &lt;br>
+ * msg_forward_prices#ea lump_price:uint64 bit_price:uint64 cell_price:uint64 &lt;br>
+ *   ihr_price_factor:uint32 first_frac:uint16 next_frac:uint16 = MsgForwardPrices;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadMsgForwardPrices(cell, t) {
+  let data = {_:"MsgForwardPrices"};
+  if (loadUint8(cell, t) !== 0xea)
+    throw Error('not a MsgForwardPrices');
+  data.lump_price = loadUint64(cell, t);
+  data.bit_price = loadUint64(cell, t);
+  data.cell_price = loadUint64(cell, t);
+  data.ihr_price_factor = loadUint32(cell, t);
+  data.first_frac = loadUint16(cell, t);
+  data.next_frac = loadUint16(cell, t);
+  return data;
+}
+
+
+/**
+ * Loads ConfigParam 24  &lt;br>
+ * 
+ * // used for messages to/from masterchain &lt;br>
+ * config_mc_fwd_prices#_ MsgForwardPrices = ConfigParam 24;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam24(cell, t) {
+  let data = {_:"ConfigParam", number: 24};
+  data.prices = loadMsgForwardPrices(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 25  &lt;br>
+ * 
+ * // used for all other messages &lt;br>
+ * config_fwd_prices#_ MsgForwardPrices = ConfigParam 25;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam25(cell, t) {
+  let data = {_:"ConfigParam", number: 25};
+  data.prices = loadMsgForwardPrices(cell, t);
+  return data;
+}
+
+/**
+ * Loads CatchainConfig  &lt;br>
+ * 
+ * catchain_config#c1 mc_catchain_lifetime:uint32 shard_catchain_lifetime:uint32  &lt;br>
+ *   shard_validators_lifetime:uint32 shard_validators_num:uint32 = CatchainConfig; &lt;br>
+ * 
+ * catchain_config_new#c2 flags:(## 7) { flags = 0 } shuffle_mc_validators:Bool &lt;br>
+ *   mc_catchain_lifetime:uint32 shard_catchain_lifetime:uint32 &lt;br>
+ *   shard_validators_lifetime:uint32 shard_validators_num:uint32 = CatchainConfig; &lt;br>
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadCatchainConfig(cell, t) {
+  let data = {_:"CatchainConfig"};
+  let type = loadUint8(cell, t);
+  if (type === 0xc1) {
+    data.type = '';
+    data.mc_catchain_lifetime = loadUint32(cell, t);
+    data.shard_catchain_lifetime = loadUint32(cell, t);
+    data.shard_validators_lifetime = loadUint32(cell, t);
+    data.shard_validators_num = loadUint32(cell, t);
+    return data;
+  }
+  else if (type === 0xc2) {
+    data.type = 'new';
+    data.flags = loadUint(cell, t, 7).toNumber();
+    if (data.flags !== 0)
+      throw Error('data.flags !== 0');
+    data.shuffle_mc_validators = loadBool(cell, t);
+    data.mc_catchain_lifetime = loadUint32(cell, t);
+    data.shard_catchain_lifetime = loadUint32(cell, t);
+    data.shard_validators_lifetime = loadUint32(cell, t);
+    data.shard_validators_num = loadUint32(cell, t);
+    return data;
+  }
+  throw Error('not a CatchainConfig');
+}
+
+/**
+ * Loads ConfigParam 28  &lt;br>
+ * 
+ * _ CatchainConfig = ConfigParam 28;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam28(cell, t) {
+  let data = {_:"ConfigParam", number: 28};
+  data.catchain = loadCatchainConfig(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConsensusConfig  &lt;br>
+ * 
+ * consensus_config#d6 round_candidates:# { round_candidates >= 1 } &lt;br>
+ *   next_candidate_delay_ms:uint32 consensus_timeout_ms:uint32 &lt;br>
+ *   fast_attempts:uint32 attempt_duration:uint32 catchain_max_deps:uint32 &lt;br>
+ *   max_block_bytes:uint32 max_collated_bytes:uint32 = ConsensusConfig; &lt;br>
+ * 
+ * consensus_config_new#d7 flags:(## 7) { flags = 0 } new_catchain_ids:Bool &lt;br>
+ *   round_candidates:(## 8) { round_candidates >= 1 } &lt;br>
+ *   next_candidate_delay_ms:uint32 consensus_timeout_ms:uint32 &lt;br>
+ *   fast_attempts:uint32 attempt_duration:uint32 catchain_max_deps:uint32 &lt;br>
+ *   max_block_bytes:uint32 max_collated_bytes:uint32 = ConsensusConfig;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConsensusConfig(cell, t) {
+  let data = {_:"ConsensusConfig"};
+  let type = loadUint8(cell, t);
+  if (type === 0xd6) {
+    data.type = '';
+    data.round_candidates = loadUint32(cell, t);
+    if (data.round_candidates &lt; 1)
+      throw Error('data.round_candidates &lt; 1');
+    data.next_candidate_delay_ms = loadUint32(cell, t);
+    data.consensus_timeout_ms = loadUint32(cell, t);
+    data.fast_attempts = loadUint32(cell, t);
+    data.attempt_duration = loadUint32(cell, t);
+    data.catchain_max_deps = loadUint32(cell, t);
+    data.max_block_bytes = loadUint32(cell, t);
+    data.max_collated_bytes = loadUint32(cell, t);
+    return data;
+  }
+  else if (type === 0xd7) {
+    data.type = 'new';
+    data.flags = loadUint(cell, t, 7).toNumber();
+    if (data.flags !== 0)
+      throw Error('data.flags !== 0');
+    data.new_catchain_ids = loadBool(cell, t);
+    data.round_candidates = loadUint(cell, t, 8).toNumber();
+    if (data.round_candidates &lt; 1)
+      throw Error('data.round_candidates &lt; 1');
+    data.next_candidate_delay_ms = loadUint32(cell, t);
+    data.consensus_timeout_ms = loadUint32(cell, t);
+    data.fast_attempts = loadUint32(cell, t);
+    data.attempt_duration = loadUint32(cell, t);
+    data.catchain_max_deps = loadUint32(cell, t);
+    data.max_block_bytes = loadUint32(cell, t);
+    data.max_collated_bytes = loadUint32(cell, t);
+    return data;
+  }
+  throw Error('not a ConsensusConfig');
+}
+
+/**
+ * Loads ConfigParam 29  &lt;br>
+ * 
+ * _ ConsensusConfig = ConfigParam 29;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam29(cell, t) {
+  let data = {_:"ConfigParam", number: 29};
+  data.consensus = loadConsensusConfig(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 31  &lt;br>
+ * 
+ * _ fundamental_smc_addr:(HashmapE 256 True) = ConfigParam 31;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam31(cell, t) {
+  let data = {_:"ConfigParam", number: 31};
+  // eslint-disable-next-line no-unused-vars
+  data.fundamental_smc_addr = loadHashmapE(cell, t, 256, (c,p) => true);
+  return data;
+}
+
+/**
+ * Loads SigPubKey  &lt;br>
+ * 
+ * ed25519_pubkey#8e81278a pubkey:bits256 = SigPubKey;  // 288 bits
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadSigPubKey(cell, t) {
+  let data = {_:"SigPubKey"};
+  if (loadUint32(cell, t) !== 0x8e81278a)
+    throw Error('not a SigPubKey');
+  data.pubkey = loadBits(cell, t, 256);
+  return data;
+}
+
+/**
+ * Loads ValidatorDescr  &lt;br>
+ * 
+ * validator#53 public_key:SigPubKey weight:uint64 = ValidatorDescr; &lt;br>
+ * validator_addr#73 public_key:SigPubKey weight:uint64 adnl_addr:bits256 = ValidatorDescr;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadValidatorDescr(cell, t) {
+  let data = {_:"ValidatorDescr"};
+  let type = loadUint8(cell, t);
+  if (type === 0x53) {
+    data.type = '';
+    data.public_key = loadSigPubKey(cell, t);
+    data.weight = loadUint64(cell, t);
+    return data;
+  }
+  else if (type === 0x73) {
+    data.type = 'addr';
+    data.public_key = loadSigPubKey(cell, t);
+    data.weight = loadUint64(cell, t);
+    data.adnl_addr = loadBits(cell, t, 256);
+    return data;
+  }
+  throw Error('not a ValidatorDescr');
+}
+
+/**
+ * Loads ValidatorSet  &lt;br>
+ * 
+ * validators#11 utime_since:uint32 utime_until:uint32  &lt;br>
+ *   total:(## 16) main:(## 16) { main &lt;= total } { main >= 1 }  &lt;br>
+ *   list:(Hashmap 16 ValidatorDescr) = ValidatorSet; &lt;br>
+ * validators_ext#12 utime_since:uint32 utime_until:uint32  &lt;br>
+ *   total:(## 16) main:(## 16) { main &lt;= total } { main >= 1 }  &lt;br>
+ *   total_weight:uint64 list:(HashmapE 16 ValidatorDescr) = ValidatorSet;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadValidatorSet(cell, t) {
+  let data = {_:"ValidatorSet"};
+  let type = loadUint8(cell, t);
+  if (type === 0x11) {
+    data.type = '';
+    data.utime_since = loadUint32(cell, t);
+    data.utime_until = loadUint32(cell, t);
+    data.total = loadUint(cell, t, 16).toNumber();
+    data.main = loadUint(cell, t, 16).toNumber();
+    if (data.total &lt; data.main)
+      throw Error('data.total &lt; data.main');
+    if (data.main &lt; 1)
+      throw Error('data.main &lt; 1');
+    data.list = loadHashmap(cell, t, 16, loadValidatorDescr);
+    return data;
+  }
+  else if (type === 0x12) {
+    data.type = 'ext';
+    data.utime_since = loadUint32(cell, t);
+    data.utime_until = loadUint32(cell, t);
+    data.total = loadUint(cell, t, 16).toNumber();
+    data.main = loadUint(cell, t, 16).toNumber();
+    if (data.total &lt; data.main)
+      throw Error('data.total &lt; data.main');
+    if (data.main &lt; 1)
+      throw Error('data.main &lt; 1');
+    data.total_weight = loadUint64(cell, t);
+    data.list = loadHashmapE(cell, t, 16, loadValidatorDescr);
+    return data;
+  }
+  throw Error('not a ValidatorSet');
+}
+
+/**
+ * Loads ConfigParam 32  &lt;br>
+ * 
+ * _ prev_validators:ValidatorSet = ConfigParam 32;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam32(cell, t) {
+  let data = {_:"ConfigParam", number: 32};
+  data.prev_validators = loadValidatorSet(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 33  &lt;br>
+ * 
+ * _ prev_temp_validators:ValidatorSet = ConfigParam 33;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam33(cell, t) {
+  let data = {_:"ConfigParam", number: 33};
+  data.prev_temp_validators = loadValidatorSet(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 34  &lt;br>
+ * 
+ * _ cur_validators:ValidatorSet = ConfigParam 34;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam34(cell, t) {
+  let data = {_:"ConfigParam", number: 34};
+  data.cur_validators = loadValidatorSet(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 35  &lt;br>
+ * 
+ * _ cur_temp_validators:ValidatorSet = ConfigParam 35;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam35(cell, t) {
+  let data = {_:"ConfigParam", number: 35};
+  data.cur_temp_validators = loadValidatorSet(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 36  &lt;br>
+ * 
+ * _ next_validators:ValidatorSet = ConfigParam 36;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam36(cell, t) {
+  let data = {_:"ConfigParam", number: 36};
+  data.next_validators = loadValidatorSet(cell, t);
+  return data;
+}
+
+/**
+ * Loads ConfigParam 37  &lt;br>
+ * 
+ * _ next_temp_validators:ValidatorSet = ConfigParam 37;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParam37(cell, t) {
+  let data = {_:"ConfigParam", number: 37};
+  data.next_temp_validators = loadValidatorSet(cell, t);
+  return data;
+}
+
+
+/**
+ * Loads arbitrary ConfigParam  &lt;br>
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @param {number} number Param number
+ * @returns {Object}
+ */
+function loadConfigParam(cell, t, number) {
+  if (t.cs !== 0 || t.ref !== 0)
+    throw Error('Invalid config cell');
+  try {
+    switch(number) {
+      case 0: return loadConfigParam0(cell, t);
+      case 1: return loadConfigParam1(cell, t);
+      case 2: return loadConfigParam2(cell, t);
+      case 3: return loadConfigParam3(cell, t);
+      case 4: return loadConfigParam4(cell, t);
+      case 6: return loadConfigParam6(cell, t);
+      case 7: return loadConfigParam7(cell, t);
+      case 8: return loadConfigParam8(cell, t);
+      case 9: return loadConfigParam9(cell, t);
+      case 10: return loadConfigParam10(cell, t);
+      case 11: return loadConfigParam11(cell, t);
+      case 12: return loadConfigParam12(cell, t);
+      case 13: return loadConfigParam13(cell, t);
+      case 14: return loadConfigParam14(cell, t);
+      case 15: return loadConfigParam15(cell, t);
+      case 16: return loadConfigParam16(cell, t);
+      case 17: return loadConfigParam17(cell, t);
+      case 18: return loadConfigParam18(cell, t);
+      case 20: return loadConfigParam20(cell, t);
+      case 21: return loadConfigParam21(cell, t);
+      case 22: return loadConfigParam22(cell, t);
+      case 23: return loadConfigParam23(cell, t);
+      case 24: return loadConfigParam24(cell, t);
+      case 25: return loadConfigParam25(cell, t);
+      case 28: return loadConfigParam28(cell, t);
+      case 29: return loadConfigParam29(cell, t);
+      case 31: return loadConfigParam31(cell, t);
+      case 32: return loadConfigParam32(cell, t);
+      case 33: return loadConfigParam33(cell, t);
+      case 34: return loadConfigParam34(cell, t);
+      case 35: return loadConfigParam35(cell, t);
+      case 36: return loadConfigParam36(cell, t);
+      case 37: return loadConfigParam37(cell, t);
+      default: return cell;
+    }
+  } catch (e) {
+    console.warn('ConfigParam ' + number + ' parse error:', e);
+    return cell;
+  }
+}
+
+
+/**
+ * Loads ExtraCurrencyCollection  &lt;br>
+ * 
+ * extra_currencies$_ dict:(HashmapE 32 (VarUInteger 32))  &lt;br>
+ *              = ExtraCurrencyCollection;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadExtraCurrencyCollection(cell, t) {
+  let data = {_:"ExtraCurrencyCollection"};
+  data.dict = loadHashmapE(cell, t, 32, (c,p) => loadVarUInteger(c, p, 32));
+  return data;
+}
+
+/**
+ * Loads CurrencyCollection  &lt;br>
+ * 
+ * currencies$_ grams:Grams other:ExtraCurrencyCollection  &lt;br>
+ *            = CurrencyCollection;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadCurrencyCollection(cell, t) {
+  let data = {_:"CurrencyCollection"};
+  data.grams = loadGrams(cell, t);
+  data.other = loadExtraCurrencyCollection(cell, t);
+  return data;
+}
+
+
+/**
+ * Loads ShardIdent  &lt;br>
+ * 
+ * shard_ident$00 shard_pfx_bits:(#&lt;= 60)  &lt;br>
+ *     workchain_id:int32 shard_prefix:uint64 = ShardIdent;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadShardIdent(cell, t) {
+  if (loadUint(cell, t, 2).toNumber() !== 0)
+    throw Error("not a ShardIdent");
+  let data = {_:"ShardIdent"};
+  data.shard_pfx_bits = loadUintLeq(cell, t, 60);
+  data.workchain_id = loadInt32(cell, t);
+  data.shard_prefix = loadUint64(cell, t);
+  data.shard = new BN(1);
+  data.shard = data.shard.shln(63 - data.shard_pfx_bits);
+  data.shard = data.shard.or(data.shard_prefix);
+  return data;
+}
+
+/**
+ * Loads BlockIdExt  &lt;br>
+ * 
+ * block_id_ext$_ shard_id:ShardIdent seq_no:uint32 &lt;br>
+ *     root_hash:bits256 file_hash:bits256 = BlockIdExt;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+// eslint-disable-next-line no-unused-vars
+function loadBlockIdExt(cell, t) {
+  let data = {_:"BlockIdExt"};
+  data.shard_id = loadShardIdent(cell, t);
+  data.seq_no = loadUint32(cell, t);
+  data.root_hash = loadBits(cell, t, 256);
+  data.file_hash = loadBits(cell, t, 256);
+  return data;
+}
+
+/**
+ * Loads ExtBlkRef  &lt;br>
+ * 
+ * ext_blk_ref$_ end_lt:uint64 &lt;br>
+ *   seq_no:uint32 root_hash:bits256 file_hash:bits256  &lt;br>
+ *   = ExtBlkRef;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadExtBlkRef(cell, t) {
+  let data = {_:"ExtBlkRef"};
+  data.end_lt = loadUint64(cell, t);
+  data.seq_no = loadUint32(cell, t);
+  data.root_hash = loadBits(cell, t, 256);
+  data.file_hash = loadBits(cell, t, 256);
+  return data;
+}
+
+/**
+ * Loads BlkMasterInfo  &lt;br>
+ * 
+ * master_info$_ master:ExtBlkRef = BlkMasterInfo;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadBlkMasterInfo(cell, t) {
+  let data = {_:"BlkMasterInfo"};
+  data.master = loadExtBlkRef(cell, t);
+  return data;
+}
+
+/**
+ * Loads Anycast  &lt;br>
+ * 
+ * anycast_info$_ depth:(#&lt;= 30) { depth >= 1 } &lt;br>
+ *     rewrite_pfx:(bits depth) = Anycast;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadAnycast(cell, t) {
+  let data = {_:"Anycast"};
+  data.depth = loadUintLeq(cell, t, 30);
+  if (data.depth &lt; 1)
+    throw Error("data.depth &lt; 1");
+  data.rewrite_pfx = loadBits(cell, t, data.depth);
+}
+
+/**
+ * Loads MsgAddressExt  &lt;br>
+ * 
+ * addr_none$00 = MsgAddressExt; &lt;br>
+ * addr_extern$01 len:(## 9) external_address:(bits len)  &lt;br>
+ *              = MsgAddressExt;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadMsgAddressExt(cell, t) {
+  const addr_type = loadUint(cell, t, 2).toNumber();
+  let data = {_:"MsgAddressExt"};
+  if (addr_type === 0) {
+    data.type = "none";
+    return data;
+  }
+  else if (addr_type === 1) {
+    data.type = "extern";
+    data.len = loadUint(cell, t, 9);
+    data.external_address = loadBits(cell, t, data.len);
+    return data;
+  }
+  throw Error("not a MsgAddressExt");
+}
+
+/**
+ * Loads MsgAddressInt  &lt;br>
+ * 
+ * addr_std$10 anycast:(Maybe Anycast)  &lt;br>
+ *    workchain_id:int8 address:bits256  = MsgAddressInt; &lt;br>
+ * addr_var$11 anycast:(Maybe Anycast) addr_len:(## 9)  &lt;br>
+ *    workchain_id:int32 address:(bits addr_len) = MsgAddressInt;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadMsgAddressInt(cell, t) {
+  const addr_type = loadUint(cell, t, 2).toNumber();
+  let data = {_:"MsgAddressInt"};
+  if (addr_type === 2) {
+    data.type = "std";
+    data.anycast = loadMaybe(cell, t, loadAnycast);
+    data.workchain_id = loadInt8(cell, t);
+    data.address = loadBits(cell, t, 256);
+    return data;
+  }
+  else if (addr_type === 3) {
+    data.type = "var";
+    data.anycast = loadMaybe(cell, t, loadAnycast);
+    data.addr_len = loadUint(cell, t, 9).toNumber();
+    data.workchain_id = loadInt32(cell, t);
+    data.address = loadBits(cell, t, data.addr_len);
+    return data;
+  }
+  throw Error("not a MsgAddressInt");
+}
+
+/**
+ * Loads StorageUsed  &lt;br>
+ * 
+ * storage_used$_ cells:(VarUInteger 7) bits:(VarUInteger 7)  &lt;br>
+ *     public_cells:(VarUInteger 7) = StorageUsed;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadStorageUsed(cell, t) {
+  let data = {_:"StorageUsed"};
+  data.cells = loadVarUInteger(cell, t, 7);
+  data.bits = loadVarUInteger(cell, t, 7);
+  data.public_cells = loadVarUInteger(cell, t, 7);
+  return data;
+}
+
+/**
+ * Loads StorageInfo  &lt;br>
+ * 
+ * storage_info$_ used:StorageUsed last_paid:uint32 &lt;br>
+ *           due_payment:(Maybe Grams) = StorageInfo;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadStorageInfo(cell, t) {
+  let data = {_:"StorageInfo"};
+  data.used = loadStorageUsed(cell, t);
+  data.last_paid = loadUint32(cell, t);
+  data.due_payment = loadMaybe(cell, t, loadGrams);
+  return data;
+}
+
+/**
+ * Loads TickTock  &lt;br>
+ * 
+ * tick_tock$_ tick:Bool tock:Bool = TickTock;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadTickTock(cell, t) {
+  let data = {_:"TickTock"};
+  data.tick = loadBool(cell, t);
+  data.tock = loadBool(cell, t);
+  return data;
+}
+
+/**
+ * Loads StateInit  &lt;br>
+ * 
+ * _ split_depth:(Maybe (## 5)) special:(Maybe TickTock) &lt;br>
+ *     code:(Maybe ^Cell) data:(Maybe ^Cell) &lt;br>
+ *     library:(HashmapE 256 SimpleLib) = StateInit;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadStateInit(cell, t) {
+  let data = {_:"StateInit"};
+  data.split_depth = loadMaybe(cell, t, loadUint, [5]);
+  data.special = loadMaybe(cell, t, loadTickTock);
+  // eslint-disable-next-line no-unused-vars
+  data.code = loadMaybeRef(cell, t, (c, p) => c);
+  // eslint-disable-next-line no-unused-vars
+  data.data = loadMaybeRef(cell, t, (c, p) => c);
+  // eslint-disable-next-line no-unused-vars
+  data.library = loadMaybe(cell, t, (c, p) => loadHashmapE(c, p, 256, (c2, p2) => c2)); // TODO SimpleLib
+  return data;
+}
+
+/**
+ * Loads AccountState  &lt;br>
+ * 
+ * account_uninit$00 = AccountState; &lt;br>
+ * account_active$1 _:StateInit = AccountState; &lt;br>
+ * account_frozen$01 state_hash:bits256 = AccountState;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadAccountState(cell, t) {
+  let data = {_:"AccountState"};
+  const active = loadBit(cell, t);
+  if (active) {
+    data.state = 'active';
+    data = Object.assign(data, loadStateInit(cell, t));
+  }
+  else {
+    const frozen = loadBit(cell, t);
+    if (frozen) {
+      data.state = 'frozen';
+      data.state_hash = loadBits(cell, t, 256);
+    }
+    else {
+      data.state = 'uninit';
+    }
+  }
+  return data;
+}
+
+/**
+ * Loads AccountStorage  &lt;br>
+ * 
+ * account_storage$_ last_trans_lt:uint64 &lt;br>
+ *     balance:CurrencyCollection state:AccountState  &lt;br>
+ *   = AccountStorage;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadAccountStorage(cell, t) {
+  let data = {_:"AccountState"};
+  data.last_trans_lt = loadUint64(cell, t);
+  data.balance = loadCurrencyCollection(cell, t);
+  data.state = loadAccountState(cell, t);
+  return data;
+}
+
+/**
+ * Loads Account  &lt;br>
+ * 
+ * account_none$0 = Account; &lt;br>
+ * account$1 addr:MsgAddressInt storage_stat:StorageInfo &lt;br>
+ *       storage:AccountStorage = Account;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadAccount(cell, t) {
+  if (cell.type === Cell.PrunnedBranchCell)
+    return cell;
+  let data = {_:"Account", cell, hash: cell.getHash(0)};
+  const exist = loadBit(cell, t);
+  if (!exist) {
+    data.type = 'none';
+    return data;
+  }
+  data.type = '';
+  data.addr = loadMsgAddressInt(cell, t);
+  data.storage_stat = loadStorageInfo(cell, t);
+  data.storage = loadAccountStorage(cell, t);
+  return data;
+}
+
+/**
+ * Loads ShardAccount  &lt;br>
+ * 
+ * account_descr$_ account:^Account last_trans_hash:bits256  &lt;br>
+ *   last_trans_lt:uint64 = ShardAccount;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadShardAccount(cell, t) {
+  let data = {_:"ShardAccount"};
+  data.account = loadAccount(cell.refs[t.ref++], {cs:0, ref:0});
+  data.last_trans_hash = loadBits(cell, t, 256);
+  data.last_trans_lt = loadUint64(cell, t);
+  return data;
+}
+
+/**
+ * Loads DepthBalanceInfo  &lt;br>
+ * 
+ * depth_balance$_ split_depth:(#&lt;= 30) balance:CurrencyCollection = DepthBalanceInfo;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadDepthBalanceInfo(cell, t) {
+  let data = {_:"DepthBalanceInfo"};
+  data.split_depth = loadUintLeq(cell, t, 30);
+  data.balance = loadCurrencyCollection(cell, t);
+  return data;
+}
+
+/**
+ * Loads ShardAccounts  &lt;br>
+ * 
+ * _ (HashmapAugE 256 ShardAccount DepthBalanceInfo) = ShardAccounts;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadShardAccounts(cell, t) {
+  return loadHashmapAugE(cell, t, 256, loadShardAccount, loadDepthBalanceInfo);
+}
+
+/**
+ * Loads HASH_UPDATE  &lt;br>
+ * 
+ * update_hashes#72 {X:Type} old_hash:bits256 new_hash:bits256 &lt;br>
+ *     = HASH_UPDATE X;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadHASH_UPDATE(cell, t) {
+  if (loadUint8(cell, t) !== 0x72) {
+    throw Error("not a HASH_UPDATE");
+  }
+  let data = {_:"HASH_UPDATE"};
+  data.old_hash = loadBits(cell, t, 256);
+  data.new_hash = loadBits(cell, t, 256);
+  return data;
+}
+
+/**
+ * Loads AccStatusChange  &lt;br>
+ * 
+ * acst_unchanged$0 = AccStatusChange;  // x -> x &lt;br>
+ * acst_frozen$10 = AccStatusChange;    // init -> frozen &lt;br>
+ * acst_deleted$11 = AccStatusChange;   // frozen -> deleted
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadAccStatusChange(cell, t) {
+  const unchanged = loadBit(cell, t);
+  if (unchanged === 0) {
+    return "unchanged";
+  }
+  const acst = loadBit(cell, t);
+  if (acst === 0) {
+    return "frozen";
+  } else {
+    return "deleted";
+  }
+}
+
+/**
+ * Loads TrStoragePhase  &lt;br>
+ * 
+ * tr_phase_storage$_ storage_fees_collected:Grams  &lt;br>
+ *   storage_fees_due:(Maybe Grams) &lt;br>
+ *   status_change:AccStatusChange &lt;br>
+ *   = TrStoragePhase;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadTrStoragePhase(cell, t) {
+  let data = {_:"TrStoragePhase"};
+  data.storage_fees_collected = loadGrams(cell, t);
+  data.storage_fees_due = loadMaybe(cell, t, loadGrams);
+  data.status_change = loadAccStatusChange(cell, t);
+  return data;
+}
+
+/**
+ * Loads TrCreditPhase  &lt;br>
+ * 
+ * tr_phase_credit$_ due_fees_collected:(Maybe Grams) &lt;br>
+ *   credit:CurrencyCollection = TrCreditPhase;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadTrCreditPhase(cell, t) {
+  let data = {_:"TrCreditPhase"};
+  data.due_fees_collected = loadMaybe(cell, t, loadGrams);
+  data.credit = loadCurrencyCollection(cell, t);
+  return data;
+}
+
+/**
+ * Loads StorageUsedShort  &lt;br>
+ * 
+ * storage_used_short$_ cells:(VarUInteger 7)  &lt;br>
+ *   bits:(VarUInteger 7) = StorageUsedShort;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadStorageUsedShort(cell, t) {
+  let data = {_:"StorageUsedShort"};
+  data.cells = loadVarUInteger(cell, t, 7);
+  data.bits = loadVarUInteger(cell, t, 7);
+  return data;
+}
+
+/**
+ * Loads TrActionPhase  &lt;br>
+ * 
+ * tr_phase_action$_ success:Bool valid:Bool no_funds:Bool &lt;br>
+ *   status_change:AccStatusChange &lt;br>
+ *   total_fwd_fees:(Maybe Grams) total_action_fees:(Maybe Grams) &lt;br>
+ *   result_code:int32 result_arg:(Maybe int32) tot_actions:uint16 &lt;br>
+ *   spec_actions:uint16 skipped_actions:uint16 msgs_created:uint16  &lt;br>
+ *   action_list_hash:bits256 tot_msg_size:StorageUsedShort  &lt;br>
+ *   = TrActionPhase;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadTrActionPhase(cell, t) {
+  let data = {_:"TrActionPhase"};
+  data.success = loadBool(cell, t);
+  data.valid = loadBool(cell, t);
+  data.no_funds = loadBool(cell, t);
+  data.status_change = loadAccStatusChange(cell, t);
+  data.total_fwd_fees = loadMaybe(cell, t, loadGrams);
+  data.total_action_fees = loadMaybe(cell, t, loadGrams);
+  data.result_code = loadInt32(cell, t);
+  data.result_arg = loadMaybe(cell, t, loadInt32);
+  data.tot_actions = loadUint16(cell, t);
+  data.spec_actions = loadUint16(cell, t);
+  data.skipped_actions = loadUint16(cell, t);
+  data.msgs_created = loadUint16(cell, t);
+  data.action_list_hash = loadBits(cell, t, 256);
+  data.tot_msg_size = loadStorageUsedShort(cell, t);
+  return data;
+}
+
+/**
+ * Loads TrBouncePhase  &lt;br>
+ * 
+ * tr_phase_bounce_negfunds$00 = TrBouncePhase; &lt;br>
+ * tr_phase_bounce_nofunds$01 msg_size:StorageUsedShort &lt;br>
+ *   req_fwd_fees:Grams = TrBouncePhase; &lt;br>
+ * tr_phase_bounce_ok$1 msg_size:StorageUsedShort  &lt;br>
+ *   msg_fees:Grams fwd_fees:Grams = TrBouncePhase;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadTrBouncePhase(cell, t) {
+  const type = loadBit(cell, t);
+  let data = {_:"TrBouncePhase"};
+  if (type === 1) {
+    // tr_phase_bounce_ok
+    data.type = "ok";
+    data.msg_size = loadStorageUsedShort(cell, t);
+    data.msg_fees = loadGrams(cell ,t);
+    data.fwd_fees = loadGrams(cell ,t);
+    return data;
+  }
+  else {
+    const type2 = loadBit(cell, t);
+    if (type2 === 0) {
+      // tr_phase_bounce_negfunds
+      data.type = "negfunds";
+      return data;
+    }
+    else {
+      // tr_phase_bounce_nofunds
+      data.type = "nofunds";
+      data.msg_size = loadStorageUsedShort(cell, t);
+      data.req_fwd_fees = loadGrams(cell ,t);
+      return data;
+    }
+  }
+}
+
+/**
+ * Loads ComputeSkipReason  &lt;br>
+ * 
+ * cskip_no_state$00 = ComputeSkipReason; &lt;br>
+ * cskip_bad_state$01 = ComputeSkipReason; &lt;br>
+ * cskip_no_gas$10 = ComputeSkipReason;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadComputeSkipReason(cell, t) {
+  const type = loadUint(cell, t, 2).toNumber();
+  if (type === 0) {
+    return "no_state";
+  }
+  else if (type === 1) {
+    return "bad_state";
+  }
+  else if (type === 2) {
+    return "no_gas";
+  }
+  throw Error("not a ComputeSkipReason");
+}
+
+/**
+ * Loads TrComputePhase  &lt;br>
+ * 
+ * tr_phase_compute_skipped$0 reason:ComputeSkipReason &lt;br>
+ *   = TrComputePhase; &lt;br>
+ * tr_phase_compute_vm$1 success:Bool msg_state_used:Bool  &lt;br>
+ *   account_activated:Bool gas_fees:Grams &lt;br>
+ *   ^[ gas_used:(VarUInteger 7) &lt;br>
+ *   gas_limit:(VarUInteger 7) gas_credit:(Maybe (VarUInteger 3)) &lt;br>
+ *   mode:int8 exit_code:int32 exit_arg:(Maybe int32) &lt;br>
+ *   vm_steps:uint32 &lt;br>
+ *   vm_init_state_hash:bits256 vm_final_state_hash:bits256 ] &lt;br>
+ *   = TrComputePhase;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadTrComputePhase(cell, t) {
+  const type = loadBit(cell, t);
+  let data = {_:"TrComputePhase"};
+  if (type === 0) {
+    // tr_phase_compute_skipped
+    data.type = "skipped";
+    data.reason = loadComputeSkipReason(cell, t);
+    return data;
+  }
+  else {
+    // tr_phase_compute_vm
+    data.type = "vm";
+    data.success = loadBool(cell, t);
+    data.msg_state_used = loadBool(cell, t);
+    data.account_activated = loadBool(cell, t);
+    data.gas_fees = loadGrams(cell, t);
+
+    let cell_r1 = cell.refs[t.ref++];
+    let tr1 = {cs: 0, ref: 0};
+    if (cell_r1.type === Cell.OrdinaryCell) {
+      data.gas_used = loadVarUInteger(cell_r1, tr1, 7);
+      data.gas_limit = loadVarUInteger(cell_r1, tr1, 7);
+      data.gas_credit = loadMaybe(cell_r1, tr1, loadVarUInteger, [3]);
+      data.mode = loadInt8(cell_r1, tr1);
+      data.exit_code = loadInt32(cell_r1, tr1);
+      data.exit_arg = loadMaybe(cell_r1, tr1, loadInt32);
+      data.vm_steps = loadUint32(cell_r1, tr1);
+      data.vm_init_state_hash = loadBits(cell_r1, tr1, 256);
+      data.vm_final_state_hash = loadBits(cell_r1, tr1, 256);
+    }
+    return data;
+  }
+}
+
+/**
+ * Loads TransactionDescr  &lt;br>
+ * 
+ * trans_ord$0000 credit_first:Bool &lt;br>
+ *   storage_ph:(Maybe TrStoragePhase) &lt;br>
+ *   credit_ph:(Maybe TrCreditPhase) &lt;br>
+ *   compute_ph:TrComputePhase action:(Maybe ^TrActionPhase) &lt;br>
+ *   aborted:Bool bounce:(Maybe TrBouncePhase) &lt;br>
+ *   destroyed:Bool &lt;br>
+ *   = TransactionDescr; &lt;br>
+ * 
+ * trans_storage$0001 storage_ph:TrStoragePhase &lt;br>
+ *   = TransactionDescr; &lt;br>
+ * 
+ * trans_tick_tock$001 is_tock:Bool storage_ph:TrStoragePhase &lt;br>
+ *   compute_ph:TrComputePhase action:(Maybe ^TrActionPhase) &lt;br>
+ *   aborted:Bool destroyed:Bool = TransactionDescr;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadTransactionDescr(cell, t) {
+  const type = loadUint(cell, t, 3).toNumber();
+  let data = {_:"TransactionDescr"};
+  if (type === 0) {
+    const type2 = loadBit(cell, t);
+    if (type2 === 0) {
+      // trans_ord
+      data.type = "ord";
+      data.credit_first = loadBool(cell, t);
+      data.storage_ph = loadMaybe(cell, t, loadTrStoragePhase);
+      data.credit_ph = loadMaybe(cell, t, loadTrCreditPhase);
+      data.compute_ph = loadTrComputePhase(cell, t);
+      data.action = loadMaybeRef(cell, t, loadTrActionPhase);
+      data.aborted = loadBool(cell, t);
+      data.bounce = loadMaybe(cell, t, loadTrBouncePhase);
+      data.destroyed = loadBool(cell, t);
+      return data;
+    }
+    else {
+      // trans_storage
+      data.type = "storage";
+      data.storage_ph = loadTrStoragePhase(cell, t);
+      return data;
+    }
+  }
+  else if (type === 1) {
+    //trans_tick_tock
+    data.type = "tick_tock";
+    data.is_tock = loadBool(cell, t);
+    data.storage_ph = loadTrStoragePhase(cell, t);
+    data.compute_ph = loadTrComputePhase(cell, t);
+    data.action = loadMaybeRef(cell, t, loadTrActionPhase);
+    data.aborted = loadBool(cell, t);
+    data.destroyed = loadBool(cell, t);
+    return data;
+  }
+  throw Error("not a TransactionDescr");
+}
+
+/**
+ * Loads AccountStatus  &lt;br>
+ * 
+ * acc_state_uninit$00 = AccountStatus; &lt;br>
+ * acc_state_frozen$01 = AccountStatus; &lt;br>
+ * acc_state_active$10 = AccountStatus; &lt;br>
+ * acc_state_nonexist$11 = AccountStatus;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadAccountStatus(cell, t) {
+  const type = loadUint(cell, t, 2).toNumber();
+  switch(type) {
+    case 0: return "uninit";
+    case 1: return "frozen";
+    case 2: return "active";
+    case 3: return "nonexist";
+  }
+}
+
+/**
+ * Loads CommonMsgInfo  &lt;br>
+ * 
+ * int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool &lt;br>
+ *   src:MsgAddressInt dest:MsgAddressInt  &lt;br>
+ *   value:CurrencyCollection ihr_fee:Grams fwd_fee:Grams &lt;br>
+ *   created_lt:uint64 created_at:uint32 = CommonMsgInfo; &lt;br>
+ * ext_in_msg_info$10 src:MsgAddressExt dest:MsgAddressInt  &lt;br>
+ *   import_fee:Grams = CommonMsgInfo; &lt;br>
+ * ext_out_msg_info$11 src:MsgAddressInt dest:MsgAddressExt &lt;br>
+ *   created_lt:uint64 created_at:uint32 = CommonMsgInfo;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadCommonMsgInfo(cell, t) {
+  let data = {_:"CommonMsgInfo"};
+  let b = loadBit(cell, t);
+  if (b === 0) {
+    data.type = 'int';
+    data.ihr_disabled = loadBool(cell, t);
+    data.bounce = loadBool(cell, t);
+    data.bounced = loadBool(cell, t);
+    data.src = loadMsgAddressInt(cell, t);
+    data.dest = loadMsgAddressInt(cell, t);
+    data.value = loadCurrencyCollection(cell, t);
+    data.ihr_fee = loadGrams(cell, t);
+    data.fwd_fee = loadGrams(cell, t);
+    data.created_lt = loadUint64(cell, t);
+    data.created_at = loadUint32(cell, t);
+    return data;
+  }
+  else {
+    b = loadBit(cell, t);
+    if (b === 0) {
+      data.type = 'ext_in';
+      data.src = loadMsgAddressExt(cell, t);
+      data.dest = loadMsgAddressInt(cell, t);
+      data.import_fee = loadGrams(cell, t);
+      return data;
+    }
+    else {
+      data.type = 'ext_out';
+      data.src = loadMsgAddressInt(cell, t);
+      data.dest = loadMsgAddressExt(cell, t);
+      data.created_lt = loadUint64(cell, t);
+      data.created_at = loadUint32(cell, t);
+      return data;
+    }
+  }
+}
+
+/**
+ * Loads any type  &lt;br>
+ * 
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadAny(cell, t) {
+  let data = {_:"Any"};
+  data.cell = cell;
+  data.current_pos = t.cs;
+  data.current_ref = t.ref;
+  return data;
+}
+
+/**
+ * Loads Message  &lt;br>
+ * 
+ * message$_ {X:Type} info:CommonMsgInfo &lt;br>
+ *   init:(Maybe (Either StateInit ^StateInit)) &lt;br>
+ *   body:(Either X ^X) = Message X;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadMessage(cell, t) {
+  let data = {_:"Message", cell, hash: cell.getHash(0)};
+  data.info = loadCommonMsgInfo(cell, t);
+  data.init = loadMaybe(cell, t,
+      (c,p) => loadEither(c,p,
+          (c2,p2) => loadStateInit(c2, p2), (c3,p3) => loadRefIfExist(c3, p3, (c4,p4) => loadStateInit(c4, p4))));
+  data.body = loadEither(cell, t,
+      (c,p) => loadAny(c,p), (c2,p2) => loadRefIfExist(c2,p2, (c3,p3) => loadAny(c3,p3)));
+  return data;
+}
+
+/**
+ * Loads Transaction  &lt;br>
+ * 
+ * transaction$0111 account_addr:bits256 lt:uint64  &lt;br>
+ *   prev_trans_hash:bits256 prev_trans_lt:uint64 now:uint32 &lt;br>
+ *   outmsg_cnt:uint15 &lt;br>
+ *   orig_status:AccountStatus end_status:AccountStatus &lt;br>
+ *   ^[ in_msg:(Maybe ^(Message Any)) out_msgs:(HashmapE 15 ^(Message Any)) ] &lt;br>
+ *   total_fees:CurrencyCollection state_update:^(HASH_UPDATE Account) &lt;br>
+ *   description:^TransactionDescr = Transaction;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadTransaction(cell, t) {
+  if (loadUint(cell, t, 4).toNumber() !== 7) {
+    throw Error("not a Transaction");
+  }
+  let data = {_:"Transaction", cell, hash: cell.getHash(0)};
+  data.account_addr = loadBits(cell, t, 256);
+  data.lt = loadUint64(cell, t);
+  data.prev_trans_hash = loadBits(cell, t, 256);
+  data.prev_trans_lt = loadUint64(cell, t);
+  data.now = loadUint32(cell, t);
+  data.outmsg_cnt = loadUint(cell, t, 15).toNumber();
+  data.orig_status = loadAccountStatus(cell, t);
+  data.end_status = loadAccountStatus(cell, t);
+
+  let cell_r1 = cell.refs[t.ref++];
+  let tr1 = {cs: 0, ref: 0};
+  if (cell_r1.type === Cell.OrdinaryCell) {
+    data.in_msg = loadMaybeRef(cell_r1, tr1, loadMessage);
+    data.out_msgs = loadHashmapE(cell_r1, tr1, 15, (c,p) => loadRefIfExist(c, p, loadMessage));
+  }
+
+  data.total_fees = loadCurrencyCollection(cell, t);
+  data.state_update = loadRefIfExist(cell, t, loadHASH_UPDATE);
+  data.description = loadRefIfExist(cell, t, loadTransactionDescr);
+  return data;
+}
+
+
+/**
+ * Loads AccountBlock  &lt;br>
+ * 
+ * acc_trans#5 account_addr:bits256 &lt;br>
+ *         transactions:(HashmapAug 64 ^Transaction CurrencyCollection) &lt;br>
+ *         state_update:^(HASH_UPDATE Account) &lt;br>
+ *       = AccountBlock;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadAccountBlock(cell, t) {
+  if (loadUint(cell, t, 4).toNumber() !== 0x5) {
+    throw Error("not an AccountBlock");
+  }
+  let data = {_:"AccountBlock"};
+  data.account_addr = loadBits(cell, t, 256);
+  data.transactions = loadHashmapAug(cell, t, 64, (c, p) => loadRefIfExist(c, p, loadTransaction), loadCurrencyCollection);
+  data.state_update = loadRefIfExist(cell, t, loadHASH_UPDATE);
+  return data;
+}
+
+/**
+ * Loads ShardAccountBlocks  &lt;br>
+ * 
+ * _ (HashmapAugE 256 AccountBlock CurrencyCollection) = ShardAccountBlocks;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadShardAccountBlocks(cell, t) {
+  return loadHashmapAugE(cell, t, 256, loadAccountBlock, loadCurrencyCollection);
+}
+
+/**
+ * Loads ConfigParams  &lt;br>
+ * 
+ * _ config_addr:bits256 config:^(Hashmap 32 ^Cell)  &lt;br>
+ *   = ConfigParams;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadConfigParams(cell, t) {
+  let data = {_:"ConfigParams"};
+  data.config_addr = loadBits(cell, t, 256);
+  data.config = loadRefIfExist(cell, t, 
+    (c, p) => loadHashmap(c, p, 32, 
+      (c2, p2, n) => loadRefIfExist(c2, p2, 
+          (c3, p3) => loadConfigParam(c3, p3, n.toNumber()))));
+  return data;
+}
+
+/**
+ * Loads ValidatorInfo  &lt;br>
+ * 
+ * validator_info$_ &lt;br>
+ *   validator_list_hash_short:uint32  &lt;br>
+ *   catchain_seqno:uint32 &lt;br>
+ *   nx_cc_updated:Bool &lt;br>
+ * = ValidatorInfo;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadValidatorInfo(cell, t) {
+  let data = {_:"ValidatorInfo"};
+  data.validator_list_hash_short = loadUint32(cell, t);
+  data.catchain_seqno = loadUint32(cell, t);
+  data.nx_cc_updated = loadBool(cell, t);
+  return data;
+}
+
+/**
+ * Loads KeyExtBlkRef  &lt;br>
+ * 
+ * _ key:Bool blk_ref:ExtBlkRef = KeyExtBlkRef;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadKeyExtBlkRef(cell, t) {
+  let data = {_:"KeyExtBlkRef"};
+  data.key = loadBool(cell, t);
+  data.blk_ref = loadExtBlkRef(cell, t);
+  return data;
+}
+
+/**
+ * Loads KeyMaxLt  &lt;br>
+ * 
+ * _ key:Bool max_end_lt:uint64 = KeyMaxLt;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadKeyMaxLt(cell, t) {
+  let data = {_:"KeyExtKeyMaxLtBlkRef"};
+  data.key = loadBool(cell, t);
+  data.max_end_lt = loadUint64(cell, t);
+  return data;
+}
+
+/**
+ * Loads OldMcBlocksInfo  &lt;br>
+ * 
+ * _ (HashmapAugE 32 KeyExtBlkRef KeyMaxLt) = OldMcBlocksInfo;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadOldMcBlocksInfo(cell, t) {
+  return loadHashmapAugE(cell, t, 32, loadKeyExtBlkRef, loadKeyMaxLt);
+}
+
+/**
+ * Loads Counters  &lt;br>
+ * 
+ * counters#_ last_updated:uint32 total:uint64 cnt2048:uint64 cnt65536:uint64 = Counters; 
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadCounters(cell, t) {
+  let data = {_:"Counters"};
+  data.last_updated = loadUint32(cell, t);
+  data.total = loadUint64(cell, t);
+  data.cnt2048 = loadUint64(cell, t);
+  data.cnt65536 = loadUint64(cell, t);
+  return data;
+}
+
+/**
+ * Loads CreatorStats  &lt;br>
+ * 
+ * creator_info#4 mc_blocks:Counters shard_blocks:Counters = CreatorStats; 
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadCreatorStats(cell, t) {
+  if (loadUint(cell, t, 4).toNumber() !== 0x4) {
+    throw Error("not an CreatorStats");
+  }
+  let data = {_:"CreatorStats"};
+  data.mc_blocks = loadCounters(cell, t);
+  data.shard_blocks = loadCounters(cell, t);
+  return data;
+}
+
+/**
+ * Loads BlockCreateStats  &lt;br>
+ * 
+ * block_create_stats#17 counters:(HashmapE 256 CreatorStats) = BlockCreateStats; &lt;br>
+ * block_create_stats_ext#34 counters:(HashmapAugE 256 CreatorStats uint32) = BlockCreateStats;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadBlockCreateStats(cell, t) {
+  let data = {_:"BlockCreateStats"};
+  let type = loadUint8(cell, t);
+  if (type === 0x17) {
+    data.type = '';
+    data.counters = loadHashmapE(cell, t, 256, loadCreatorStats);
+  }
+  else if (type === 0x34) {
+    data.type = 'ext';
+    data.counters = loadHashmapAugE(cell, t, 256, loadCreatorStats, loadUint32);
+  }
+  return data;
+}
+
+/**
+ * Loads McStateExtra  &lt;br>
+ * 
+ * masterchain_state_extra#cc26 &lt;br>
+ *   shard_hashes:ShardHashes &lt;br>
+ *   config:ConfigParams &lt;br>
+ *   ^[ flags:(## 16) { flags &lt;= 1 } &lt;br>
+ *      validator_info:ValidatorInfo &lt;br>
+ *      prev_blocks:OldMcBlocksInfo &lt;br>
+ *      after_key_block:Bool &lt;br>
+ *      last_key_block:(Maybe ExtBlkRef) &lt;br>
+ *      block_create_stats:(flags . 0)?BlockCreateStats ] &lt;br>
+ *   global_balance:CurrencyCollection &lt;br>
+ * = McStateExtra;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadMcStateExtra(cell, t) {
+  if (loadUint16(cell, t) !== 0xcc26) {
+    throw Error("not a McStateExtra");
+  }
+  let data = {_:"McStateExtra"};
+  data.shard_hashes = loadShardHashes(cell, t);
+  data.config = loadConfigParams(cell, t);
+
+  let cell_r1 = cell.refs[t.ref++];
+  let tr1 = {cs: 0, ref: 0};
+  if (cell_r1.type === Cell.OrdinaryCell) {
+    data.flags = loadUint16(cell_r1, tr1);
+    if (data.flags > 1)
+      throw Error("data.flags > 1");
+    data.validator_info = loadValidatorInfo(cell_r1, tr1);
+    data.prev_blocks = loadOldMcBlocksInfo(cell_r1, tr1);
+    data.after_key_block = loadBool(cell_r1, tr1);
+    data.last_key_block = loadMaybe(cell_r1, tr1, loadExtBlkRef);
+    if (data.flags &amp; 1)
+      data.block_create_stats = loadBlockCreateStats(cell_r1, tr1);
+  }
+
+  data.global_balance = loadCurrencyCollection(cell, t);
+  return data;
+}
+
+
+/**
+ * Loads ShardStateUnsplit  &lt;br>
+ * 
+ * shard_state#9023afe2 global_id:int32 &lt;br>
+ *   shard_id:ShardIdent  &lt;br>
+ *   seq_no:uint32 vert_seq_no:# &lt;br>
+ *   gen_utime:uint32 gen_lt:uint64 &lt;br>
+ *   min_ref_mc_seqno:uint32 &lt;br>
+ *   out_msg_queue_info:^OutMsgQueueInfo &lt;br>
+ *   before_split:(## 1) &lt;br>
+ *   accounts:^ShardAccounts &lt;br>
+ *   ^[ overload_history:uint64 underload_history:uint64 &lt;br>
+ *   total_balance:CurrencyCollection &lt;br>
+ *   total_validator_fees:CurrencyCollection &lt;br>
+ *   libraries:(HashmapE 256 LibDescr) &lt;br>
+ *   master_ref:(Maybe BlkMasterInfo) ] &lt;br>
+ *   custom:(Maybe ^McStateExtra) &lt;br>
+ *   = ShardStateUnsplit;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadShardStateUnsplit(cell) {
+  let t = {cs: 0, ref: 0};
+  if (loadUint32(cell, t) !== 0x9023afe2)
+    throw Error("not a ShardStateUnsplit");
+  let data = {_:"ShardStateUnsplit"};
+
+  data.global_id = loadInt32(cell, t);
+  data.shard_id = loadShardIdent(cell, t);
+  data.seq_no = loadUint32(cell, t);
+  data.vert_seq_no = loadUint32(cell, t);
+  data.gen_utime = loadUint32(cell, t);
+  data.gen_lt = loadUint64(cell, t);
+  data.min_ref_mc_seqno = loadUint32(cell, t);
+  data.out_msg_queue_info = cell.refs[t.ref++];
+  data.before_split = loadBit(cell, t);
+  data.accounts = loadShardAccounts(cell.refs[t.ref++], {cs:0, ref:0});
+
+  let cell_r1 = cell.refs[t.ref++];
+  let tr1 = {cs: 0, ref: 0};
+  if (cell_r1.type === Cell.OrdinaryCell) {
+    data.overload_history = loadUint64(cell_r1, tr1.cs);
+    data.underload_history = loadUint64(cell_r1, tr1.cs);
+    data.total_balance = loadCurrencyCollection(cell_r1, tr1);
+    data.total_validator_fees = loadCurrencyCollection(cell_r1, tr1);
+    // eslint-disable-next-line no-unused-vars
+    data.libraries = loadHashmapE(cell_r1, tr1, 256, (c,p) => c);
+    data.master_ref = loadMaybe(cell_r1, tr1, loadBlkMasterInfo);
+  }
+
+  data.custom = loadMaybeRef(cell, t, loadMcStateExtra);
+  return data;
+}
+
+
+/**
+ * Loads GlobalVersion  &lt;br>
+ * 
+ * capabilities#c4 version:uint32 capabilities:uint64 = GlobalVersion;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadGlobalVersion(cell, t) {
+  if (loadUint8(cell, t) !== 0xc4)
+    throw Error("not a GlobalVersion");
+  let data = {_:"GlobalVersion"};
+  data.version = loadUint32(cell, t);
+  data.capabilities = loadUint64(cell, t);
+  return data;
+}
+
+/**
+ * Loads BlkPrevInfo  &lt;br>
+ * 
+ * prev_blk_info$_ prev:ExtBlkRef = BlkPrevInfo 0; &lt;br>
+ * prev_blks_info$_ prev1:^ExtBlkRef prev2:^ExtBlkRef = BlkPrevInfo 1;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadBlkPrevInfo(cell, t, n) {
+  let data = {_:"BlkPrevInfo"};
+  if (n === 0) {
+    data.type = "prev_blk_info";
+    data.prev = loadExtBlkRef(cell, t);
+  } else {
+    data.type = "prev_blks_info";
+    data.prev1 = loadRefIfExist(cell, t, loadExtBlkRef);
+    data.prev2 = loadRefIfExist(cell, t, loadExtBlkRef);
+  }
+  return data;
+}
+
+/**
+ * Loads BlockInfo  &lt;br>
+ * 
+ * block_info#9bc7a987 version:uint32  &lt;br>
+ *   not_master:(## 1)  &lt;br>
+ *   after_merge:(## 1) before_split:(## 1)  &lt;br>
+ *   after_split:(## 1)  &lt;br>
+ *   want_split:Bool want_merge:Bool &lt;br>
+ *   key_block:Bool vert_seqno_incr:(## 1) &lt;br>
+ *   flags:(## 8) { flags &lt;= 1 } &lt;br>
+ *   seq_no:# vert_seq_no:# { vert_seq_no >= vert_seqno_incr }  &lt;br>
+ *   { prev_seq_no:# } { ~prev_seq_no + 1 = seq_no }  &lt;br>
+ *   shard:ShardIdent gen_utime:uint32 &lt;br>
+ *   start_lt:uint64 end_lt:uint64 &lt;br>
+ *   gen_validator_list_hash_short:uint32 &lt;br>
+ *   gen_catchain_seqno:uint32 &lt;br>
+ *   min_ref_mc_seqno:uint32 &lt;br>
+ *   prev_key_block_seqno:uint32 &lt;br>
+ *   gen_software:flags . 0?GlobalVersion &lt;br>
+ *   master_ref:not_master?^BlkMasterInfo  &lt;br>
+ *   prev_ref:^(BlkPrevInfo after_merge) &lt;br>
+ *   prev_vert_ref:vert_seqno_incr?^(BlkPrevInfo 0) &lt;br>
+ *   = BlockInfo;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @returns {Object}
+ */
+function loadBlockInfo(cell) {
+  let t = {cs: 0, ref: 0};
+  if (loadUint32(cell, t) !== 0x9bc7a987)
+    throw Error("not a BlockInfo");
+  let data = {_:"BlockInfo"};
+  data.version = loadUint32(cell, t);
+  data.not_master = loadBit(cell, t);
+  data.after_merge = loadBit(cell, t);
+  data.before_split = loadBit(cell, t);
+  data.after_split = loadBit(cell, t);
+  data.want_split = loadBool(cell, t);
+  data.want_merge = loadBool(cell, t);
+  data.key_block = loadBool(cell, t);
+  data.vert_seqno_incr = loadBit(cell, t);
+  data.flags = loadUint8(cell, t);
+  if (data.flags > 1)
+    throw Error("data.flags > 1");
+
+  data.seq_no = loadUint32(cell, t);
+  data.vert_seq_no = loadUint32(cell, t);
+  if (data.vert_seqno_incr > data.vert_seq_no)
+    throw Error("data.vert_seqno_incr > data.vert_seq_no");
+
+  data.prev_seq_no = data.seq_no - 1;
+
+  data.shard = loadShardIdent(cell, t);
+
+  data.gen_utime = loadUint32(cell, t);
+  data.start_lt = loadUint64(cell, t);
+  data.end_lt = loadUint64(cell, t);
+  data.gen_validator_list_hash_short = loadUint32(cell, t);
+  data.gen_catchain_seqno = loadUint32(cell, t);
+  data.min_ref_mc_seqno = loadUint32(cell, t);
+  data.prev_key_block_seqno = loadUint32(cell, t);
+  if (data.flags &amp; 1) {
+    data.gen_software = loadGlobalVersion(cell, t);
+  }
+  if (data.not_master) {
+    data.master_ref  = loadRefIfExist(cell, t, loadBlkMasterInfo);
+  }
+  data.prev_ref = loadRefIfExist(cell, t, (c,p) => loadBlkPrevInfo(c, p, data.after_merge));
+  if (data.vert_seqno_incr) {
+    data.prev_vert_ref = loadRefIfExist(cell, t, (c,p) => loadBlkPrevInfo(c, p, 0));
+  }
+  return data;
+}
+
+
+/**
+ * Loads FutureSplitMerge  &lt;br>
+ * 
+ * fsm_none$0 = FutureSplitMerge; &lt;br>
+ * fsm_split$10 split_utime:uint32 interval:uint32 = FutureSplitMerge; &lt;br>
+ * fsm_merge$11 merge_utime:uint32 interval:uint32 = FutureSplitMerge;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadFutureSplitMerge(cell, t) {
+  const type = loadBit(cell, t);
+  let data = {_:"FutureSplitMerge"};
+  if (type === 0) {
+    data.type = "none";
+  }
+  else {
+    const type2 = loadBit(cell, t);
+    if (type2 === 0) {
+      data.type = "split";
+      data.split_utime = loadUint32(cell, t);
+      data.interval = loadUint32(cell, t);
+    }
+    else {
+      data.type = "merge";
+      data.merge_utime = loadUint32(cell, t);
+      data.interval = loadUint32(cell, t);
+    }
+  }
+  return data;
+}
+
+/**
+ * Loads ShardDescr  &lt;br>
+ * 
+ * shard_descr#b seq_no:uint32 reg_mc_seqno:uint32 &lt;br>
+ *   start_lt:uint64 end_lt:uint64 &lt;br>
+ *   root_hash:bits256 file_hash:bits256  &lt;br>
+ *   before_split:Bool before_merge:Bool &lt;br>
+ *   want_split:Bool want_merge:Bool &lt;br>
+ *   nx_cc_updated:Bool flags:(## 3) { flags = 0 } &lt;br>
+ *   next_catchain_seqno:uint32 next_validator_shard:uint64 &lt;br>
+ *   min_ref_mc_seqno:uint32 gen_utime:uint32 &lt;br>
+ *   split_merge_at:FutureSplitMerge &lt;br>
+ *   fees_collected:CurrencyCollection &lt;br>
+ *   funds_created:CurrencyCollection = ShardDescr; &lt;br>
+ * 
+ * shard_descr_new#a seq_no:uint32 reg_mc_seqno:uint32 &lt;br>
+ *   start_lt:uint64 end_lt:uint64 &lt;br>
+ *   root_hash:bits256 file_hash:bits256  &lt;br>
+ *   before_split:Bool before_merge:Bool &lt;br>
+ *   want_split:Bool want_merge:Bool &lt;br>
+ *   nx_cc_updated:Bool flags:(## 3) { flags = 0 } &lt;br>
+ *   next_catchain_seqno:uint32 next_validator_shard:uint64 &lt;br>
+ *   min_ref_mc_seqno:uint32 gen_utime:uint32 &lt;br>
+ *   split_merge_at:FutureSplitMerge &lt;br>
+ *   ^[ fees_collected:CurrencyCollection &lt;br>
+ *      funds_created:CurrencyCollection ] = ShardDescr;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadShardDescr(cell, t) {
+  const type = loadUint(cell, t, 4).toNumber();
+  if (type !== 0xa &amp;&amp; type !== 0xb)
+    throw Error("not a ShardDescr");
+  let data = {_:"ShardDescr"};
+  data.seq_no = loadUint32(cell, t);
+  data.reg_mc_seqno = loadUint32(cell, t);
+  data.start_lt = loadUint64(cell, t);
+  data.end_lt = loadUint64(cell, t);
+  data.root_hash = loadBits(cell, t, 256);
+  data.file_hash = loadBits(cell, t, 256);
+  data.before_split = loadBool(cell, t);
+  data.before_merge = loadBool(cell, t);
+  data.want_split = loadBool(cell, t);
+  data.want_merge = loadBool(cell, t);
+  data.nx_cc_updated = loadBool(cell, t);
+  data.flags = loadUint(cell, t, 3).toNumber();
+  if (data.flags !== 0)
+    throw Error("ShardDescr data.flags !== 0");
+  data.next_catchain_seqno = loadUint32(cell, t);
+  data.next_validator_shard = loadUint64(cell, t);
+  data.min_ref_mc_seqno = loadUint32(cell, t);
+  data.gen_utime = loadUint32(cell, t);
+  data.split_merge_at = loadFutureSplitMerge(cell, t);
+  if (type === 0xb) {
+    data.fees_collected = loadCurrencyCollection(cell, t);
+    data.funds_created = loadCurrencyCollection(cell, t);
+  }
+  else if (type === 0xa) {
+    let cell_r1 = cell.refs[t.ref++];
+    let tr1 = {cs: 0, ref: 0};
+    if (cell_r1.type === Cell.OrdinaryCell) {
+      data.fees_collected = loadCurrencyCollection(cell_r1, tr1);
+      data.funds_created = loadCurrencyCollection(cell_r1, tr1);
+    }
+  }
+  return data;
+}
+
+/**
+ * Loads ShardHashes  &lt;br>
+ * 
+ * _ (HashmapE 32 ^(BinTree ShardDescr)) = ShardHashes;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadShardHashes(cell, t) {
+  return loadHashmapE(cell, t, 32, (c, p) => loadRefIfExist(c, p, (c2, p2) => loadBinTree(c2, p2, loadShardDescr)));
+}
+
+/**
+ * Loads ShardFeeCreated  &lt;br>
+ * 
+ * _ fees:CurrencyCollection create:CurrencyCollection = ShardFeeCreated;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadShardFeeCreated(cell, t) {
+  let data = {_:"CurrencyCollection"};
+  data.fees = loadCurrencyCollection(cell, t);
+  data.create = loadCurrencyCollection(cell, t);
+  return data;
+}
+
+/**
+ * Loads ShardFees  &lt;br>
+ * 
+ * _ (HashmapAugE 96 ShardFeeCreated ShardFeeCreated) = ShardFees;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadShardFees(cell, t) {
+  return loadHashmapAugE(cell, t, 96, loadShardFeeCreated, loadShardFeeCreated);
+}
+
+/**
+ * Loads CryptoSignature  &lt;br>
+ * 
+ * ed25519_signature#5 R:bits256 s:bits256 = CryptoSignatureSimple;  // 516 bits &lt;br>
+ * _ CryptoSignatureSimple = CryptoSignature;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadCryptoSignature(cell, t) {
+  if (loadUint(cell, t, 4).toNumber() !== 0x5) {
+    throw Error("not a CryptoSignatureSimple");
+  }
+  let data = {_:"CryptoSignatureSimple"};
+  data.R = loadBits(cell, t, 256);
+  data.s = loadBits(cell, t, 256);
+  return data;
+}
+
+/**
+ * Loads CryptoSignaturePair  &lt;br>
+ * 
+ * sig_pair$_ node_id_short:bits256 sign:CryptoSignature = CryptoSignaturePair;  // 256+x ~ 772 bits
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadCryptoSignaturePair(cell, t) {
+  let data = {_:"CryptoSignaturePair"};
+  data.node_id_short = loadBits(cell, t, 256);
+  data.sign = loadCryptoSignature(cell, t);
+  return data;
+}
+
+function loadInMsg(cell, t) {
+  cell;
+  t;
+  let data = {_:"InMsg"};     // TODO
+  return data;
+}
+function loadInMsgDescr(cell, t) {
+  cell;
+  t;
+  let data = {_:"InMsgDescr"};     // TODO
+  return data;
+}
+function loadOutMsgDescr(cell, t) {
+  cell;
+  t;
+  let data = {_:"OutMsgDescr"};     // TODO
+  return data;
+}
+
+/**
+ * Loads McBlockExtra  &lt;br>
+ * 
+ * masterchain_block_extra#cca5 &lt;br>
+ *   key_block:(## 1) &lt;br>
+ *   shard_hashes:ShardHashes &lt;br>
+ *   shard_fees:ShardFees &lt;br>
+ *   ^[ prev_blk_signatures:(HashmapE 16 CryptoSignaturePair) &lt;br>
+ *      recover_create_msg:(Maybe ^InMsg) &lt;br>
+ *      mint_msg:(Maybe ^InMsg) ] &lt;br>
+ *   config:key_block?ConfigParams &lt;br>
+ * = McBlockExtra;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadMcBlockExtra(cell, t) {
+  if (loadUint16(cell, t) !== 0xcca5) {
+    throw Error("not a McBlockExtra");
+  }
+  let data = {_:"McBlockExtra"};
+  data.key_block = loadBit(cell, t);
+  data.shard_hashes = loadShardHashes(cell, t);
+  data.shard_fees = loadShardFees(cell, t);
+
+  let cell_r1 = cell.refs[t.ref++];
+  let tr1 = {cs: 0, ref: 0};
+  if (cell_r1.type === Cell.OrdinaryCell) {
+    data.prev_blk_signatures = loadHashmapE(cell_r1, tr1, 16, loadCryptoSignaturePair);
+    data.recover_create_msg = loadMaybeRef(cell_r1, tr1, loadInMsg);
+    data.mint_msg = loadMaybeRef(cell_r1, tr1, loadInMsg);
+  }
+
+  if (data.key_block)
+    data.config = loadConfigParams(cell, t);
+  return data;
+}
+
+/**
+ * Loads BlockExtra  &lt;br>
+ * 
+ * block_extra in_msg_descr:^InMsgDescr &lt;br>
+ *   out_msg_descr:^OutMsgDescr &lt;br>
+ *   account_blocks:^ShardAccountBlocks &lt;br>
+ *   rand_seed:bits256 &lt;br>
+ *   created_by:bits256 &lt;br>
+ *   custom:(Maybe ^McBlockExtra) = BlockExtra;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadBlockExtra(cell, t) {
+  if (loadUint32(cell, t) !== 0x4a33f6fd) {
+    throw Error("not a BlockExtra");
+  }
+  let data = {_:"BlockExtra"};
+  data.in_msg_descr = loadRefIfExist(cell, t, loadInMsgDescr);
+  data.out_msg_descr = loadRefIfExist(cell, t, loadOutMsgDescr);
+  data.account_blocks = loadRefIfExist(cell, t, loadShardAccountBlocks);
+  data.rand_seed = loadBits(cell, t, 256);
+  data.created_by = loadBits(cell, t, 256);
+  data.custom = loadMaybeRef(cell, t, loadMcBlockExtra);
+  return data;
+}
+
+/**
+ * Loads ValueFlow  &lt;br>
+ * 
+ * value_flow ^[ from_prev_blk:CurrencyCollection  &lt;br>
+ *   to_next_blk:CurrencyCollection &lt;br>
+ *   imported:CurrencyCollection &lt;br>
+ *   exported:CurrencyCollection ] &lt;br>
+ *   fees_collected:CurrencyCollection &lt;br>
+ *   ^[ &lt;br>
+ *   fees_imported:CurrencyCollection &lt;br>
+ *   recovered:CurrencyCollection &lt;br>
+ *   created:CurrencyCollection &lt;br>
+ *   minted:CurrencyCollection &lt;br>
+ *   ] = ValueFlow;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadValueFlow(cell, t) {
+  if (loadUint32(cell, t) !== 0xb8e48dfb)
+    throw Error("not a ValueFlow");
+  let data = {_:"ValueFlow"}; // TODO
+  return data;
+}
+
+/**
+ * Loads MERKLE_UPDATE  &lt;br>
+ * 
+ * !merkle_update#02 {X:Type} old_hash:bits256 new_hash:bits256 &lt;br>
+ *   old:^X new:^X = MERKLE_UPDATE X;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @param {Object} t Current position
+ * @returns {Object}
+ */
+function loadMERKLE_UPDATE(cell, t) {
+  // exotic cell with type = 4
+  if (loadUint8(cell, t) !== 0x04) {
+    throw Error("not a MERKLE_UPDATE");
+  }
+  let data = {_:"MERKLE_UPDATE"};
+  data.old_hash = loadBits(cell, t, 256);
+  data.new_hash = loadBits(cell, t, 256);
+  data.old = cell.refs[t.ref++]; // TODO
+  data.new = cell.refs[t.ref++];
+  return data;
+}
+
+/**
+ * Loads Block  &lt;br>
+ * 
+ * block#11ef55aa global_id:int32 &lt;br>
+ *   info:^BlockInfo value_flow:^ValueFlow &lt;br>
+ *   state_update:^(MERKLE_UPDATE ShardState)  &lt;br>
+ *   extra:^BlockExtra = Block;
+ * 
+ * @throws {Error} Error object with description
+ * @param {Cell} cell Cell object to parse
+ * @returns {Object}
+ */
+function loadBlock(cell) {
+  let t = {cs: 0, ref: 0};
+  if (loadUint32(cell, t) !== 0x11ef55aa) {
+    throw Error("not a Block");
+  }
+  let data = {_:"Block"};
+  data.global_id = loadInt32(cell, t);
+  data.info = loadRefIfExist(cell, t, loadBlockInfo);
+  data.value_flow = loadRefIfExist(cell, t, loadValueFlow);
+  data.state_update = loadRefIfExist(cell, t, loadMERKLE_UPDATE); // TODO (type!)
+  data.extra = loadRefIfExist(cell, t, loadBlockExtra);
+  return data;
+}
+
+
+
+/**
+ * Block parser helper class
+ */
+class BlockParser {
+
+  /**
+   * Parses block cell
+   * 
+   * @throws {Error} Error object with description
+   * @param {Cell} cell Cell to parse
+   * @returns {Object}
+   */
+  static parseBlock(cell) {
+    return loadBlock(cell);
+  }
+
+  /**
+   * Parses Shard state
+   * 
+   * @throws {Error} Error object with description
+   * @param {Cell} cell Cell to parse
+   * @returns {Object}
+   */
+  static parseShardState(cell) {
+    return loadShardStateUnsplit(cell);
+  }
+
+  /**
+   * Parses Shard hashes
+   * 
+   * @throws {Error} Error object with description
+   * @param {Cell} cell Cell to parse
+   * @returns {Object}
+   */
+  static parseShardHashes(cell) {
+    return loadShardHashes(cell, {cs:0, ref:0});
+  }
+
+  /**
+   * Parses Account
+   * 
+   * @throws {Error} Error object with description
+   * @param {Cell} cell Cell to parse
+   * @returns {Object}
+   */
+  static parseAccount(cell) {
+    return loadAccount(cell, {cs:0, ref:0});
+  }
+
+  /**
+   * Parses Transaction
+   * 
+   * @throws {Error} Error object with description
+   * @param {Cell} cell Cell to parse
+   * @returns {Object}
+   */
+  static parseTransaction(cell) {
+    return loadTransaction(cell, {cs:0, ref:0});
+  }
+
+  /**
+   * Parses Message
+   * 
+   * @throws {Error} Error object with description
+   * @param {Cell} cell Cell to parse
+   * @returns {Object}
+   */
+  static parseMessage(cell) {
+    return loadMessage(cell, {cs:0, ref:0});
+  }
+
+  /**
+   * Parses signature from message body (ABIv2 specific)
+   * 
+   * @throws {Error} Error object with description
+   * @param {Object} any Message body
+   * @returns {Object}
+   */
+  static parseSignature(any) {
+    if (any._ !== 'Any')
+      throw Error('not an any');
+
+    let t = {cs: any.current_pos, ref: any.current_ref};
+
+    let exist = loadBit(any.cell, t);
+    if (!exist)
+      throw Error('no signature');
+
+    let signature = loadBits(any.cell, t, 512);
+    return signature;
+  }
+
+  /**
+   * Parses signature from message body
+   * 
+   * @throws {Error} Error object with description
+   * @param {Object} any Message body
+   * @returns {Object}
+   */
+  static parseSignatureClassic(any) {
+    if (any._ !== 'Any')
+      throw Error('not an any');
+
+    let t = {cs: any.current_pos, ref: any.current_ref};
+
+    let signature = loadBits(any.cell, t, 512);
+    return signature;
+  }
+
+  /**
+   * Checks block header
+   * 
+   * @throws {Error} Error object with description
+   * @param {Cell} cell Cell to parse
+   * @param {BlockId} blockId block id
+   * @returns {Object}
+   */
+  static checkBlockHeader(cell, blockId) {
+    if (cell.type !== Cell.MerkleProofCell) {
+      throw Error("Not a MerkleProof block");
+    }
+    if (!compareBytes(new Uint8Array(blockId.root_hash.buffer), cell.refs[0].getHash(0))) {
+      throw Error("Block header has incorrect root hash");
+    }
+    let block = loadBlock(cell.refs[0]);
+    //console.log(block);
+    if (block.info.version !== 0) {
+      throw Error("Invalid BlockInfo version");
+    }
+    if (block.info.shard.workchain_id !== blockId.workchain) {
+      throw Error("Invalid BlockInfo workchain");
+    }
+    if (!blockId.compareShard(block.info.shard.shard)) {
+      throw Error("Invalid BlockInfo shard");
+    }
+    if (block.info.seq_no !== blockId.seqno) {
+      throw Error("Invalid BlockInfo seqno");
+    }
+    //if (block.state_update._ !== 'MERKLE_UPDATE') {
+    //    throw Error("No MerkleUpdate in block");
+    //}
+
+    // returns current ShardState of a block
+    //return block.state_update.refs[1].getHash(0);
+    return block;
+  }
+
+}
+
+module.exports = {BlockParser};</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbiContract.html">AbiContract</a></li><li><a href="Address.html">Address</a></li><li><a href="BitString.html">BitString</a></li><li><a href="Block.html">Block</a></li><li><a href="BlockId.html">BlockId</a></li><li><a href="BlockParser.html">BlockParser</a></li><li><a href="BrowserStorage.html">BrowserStorage</a></li><li><a href="Cell.html">Cell</a></li><li><a href="ClassicContract.html">ClassicContract</a></li><li><a href="Contract.html">Contract</a></li><li><a href="Hashmap.html">Hashmap</a></li><li><a href="HashmapAug.html">HashmapAug</a></li><li><a href="HashmapAugE.html">HashmapAugE</a></li><li><a href="HashmapE.html">HashmapE</a></li><li><a href="LiteClient.html">LiteClient</a></li><li><a href="Storage.html">Storage</a></li></ul><h3>Global</h3><ul><li><a href="global.html#base64ToBytes">base64ToBytes</a></li><li><a href="global.html#base64toString">base64toString</a></li><li><a href="global.html#bytesToBase64">bytesToBase64</a></li><li><a href="global.html#bytesToBinString">bytesToBinString</a></li><li><a href="global.html#bytesToHex">bytesToHex</a></li><li><a href="global.html#bytesToString">bytesToString</a></li><li><a href="global.html#compareBytes">compareBytes</a></li><li><a href="global.html#concatBytes">concatBytes</a></li><li><a href="global.html#crc16">crc16</a></li><li><a href="global.html#crc32c">crc32c</a></li><li><a href="global.html#estimateFee">estimateFee</a></li><li><a href="global.html#fromNano">fromNano</a></li><li><a href="global.html#getAddress">getAddress</a></li><li><a href="global.html#getMessage">getMessage</a></li><li><a href="global.html#hexToBytes">hexToBytes</a></li><li><a href="global.html#loadAccount">loadAccount</a></li><li><a href="global.html#loadAccountBlock">loadAccountBlock</a></li><li><a href="global.html#loadAccountState">loadAccountState</a></li><li><a href="global.html#loadAccountStatus">loadAccountStatus</a></li><li><a href="global.html#loadAccountStorage">loadAccountStorage</a></li><li><a href="global.html#loadAccStatusChange">loadAccStatusChange</a></li><li><a href="global.html#loadAny">loadAny</a></li><li><a href="global.html#loadAnycast">loadAnycast</a></li><li><a href="global.html#loadBinTree">loadBinTree</a></li><li><a href="global.html#loadBit">loadBit</a></li><li><a href="global.html#loadBits">loadBits</a></li><li><a href="global.html#loadBlkMasterInfo">loadBlkMasterInfo</a></li><li><a href="global.html#loadBlkPrevInfo">loadBlkPrevInfo</a></li><li><a href="global.html#loadBlock">loadBlock</a></li><li><a href="global.html#loadBlockCreateFees">loadBlockCreateFees</a></li><li><a href="global.html#loadBlockCreateStats">loadBlockCreateStats</a></li><li><a href="global.html#loadBlockExtra">loadBlockExtra</a></li><li><a href="global.html#loadBlockIdExt">loadBlockIdExt</a></li><li><a href="global.html#loadBlockInfo">loadBlockInfo</a></li><li><a href="global.html#loadBlockLimits">loadBlockLimits</a></li><li><a href="global.html#loadBool">loadBool</a></li><li><a href="global.html#loadCatchainConfig">loadCatchainConfig</a></li><li><a href="global.html#loadCommonMsgInfo">loadCommonMsgInfo</a></li><li><a href="global.html#loadComplaintPricing">loadComplaintPricing</a></li><li><a href="global.html#loadComputeSkipReason">loadComputeSkipReason</a></li><li><a href="global.html#loadConfigParam">loadConfigParam</a></li><li><a href="global.html#loadConfigParam0">loadConfigParam0</a></li><li><a href="global.html#loadConfigParam1">loadConfigParam1</a></li><li><a href="global.html#loadConfigParam2">loadConfigParam2</a></li><li><a href="global.html#loadConfigParam3">loadConfigParam3</a></li><li><a href="global.html#loadConfigParam4">loadConfigParam4</a></li><li><a href="global.html#loadConfigParam6">loadConfigParam6</a></li><li><a href="global.html#loadConfigParam7">loadConfigParam7</a></li><li><a href="global.html#loadConfigParam8">loadConfigParam8</a></li><li><a href="global.html#loadConfigParam9">loadConfigParam9</a></li><li><a href="global.html#loadConfigParam10">loadConfigParam10</a></li><li><a href="global.html#loadConfigParam11">loadConfigParam11</a></li><li><a href="global.html#loadConfigParam12">loadConfigParam12</a></li><li><a href="global.html#loadConfigParam13">loadConfigParam13</a></li><li><a href="global.html#loadConfigParam14">loadConfigParam14</a></li><li><a href="global.html#loadConfigParam15">loadConfigParam15</a></li><li><a href="global.html#loadConfigParam16">loadConfigParam16</a></li><li><a href="global.html#loadConfigParam17">loadConfigParam17</a></li><li><a href="global.html#loadConfigParam18">loadConfigParam18</a></li><li><a href="global.html#loadConfigParam20">loadConfigParam20</a></li><li><a href="global.html#loadConfigParam21">loadConfigParam21</a></li><li><a href="global.html#loadConfigParam22">loadConfigParam22</a></li><li><a href="global.html#loadConfigParam23">loadConfigParam23</a></li><li><a href="global.html#loadConfigParam24">loadConfigParam24</a></li><li><a href="global.html#loadConfigParam25">loadConfigParam25</a></li><li><a href="global.html#loadConfigParam28">loadConfigParam28</a></li><li><a href="global.html#loadConfigParam29">loadConfigParam29</a></li><li><a href="global.html#loadConfigParam31">loadConfigParam31</a></li><li><a href="global.html#loadConfigParam32">loadConfigParam32</a></li><li><a href="global.html#loadConfigParam33">loadConfigParam33</a></li><li><a href="global.html#loadConfigParam34">loadConfigParam34</a></li><li><a href="global.html#loadConfigParam35">loadConfigParam35</a></li><li><a href="global.html#loadConfigParam36">loadConfigParam36</a></li><li><a href="global.html#loadConfigParam37">loadConfigParam37</a></li><li><a href="global.html#loadConfigParams">loadConfigParams</a></li><li><a href="global.html#loadConfigProposalSetup">loadConfigProposalSetup</a></li><li><a href="global.html#loadConfigVotingSetup">loadConfigVotingSetup</a></li><li><a href="global.html#loadConsensusConfig">loadConsensusConfig</a></li><li><a href="global.html#loadCounters">loadCounters</a></li><li><a href="global.html#loadCreatorStats">loadCreatorStats</a></li><li><a href="global.html#loadCryptoSignature">loadCryptoSignature</a></li><li><a href="global.html#loadCryptoSignaturePair">loadCryptoSignaturePair</a></li><li><a href="global.html#loadCurrencyCollection">loadCurrencyCollection</a></li><li><a href="global.html#loadDepthBalanceInfo">loadDepthBalanceInfo</a></li><li><a href="global.html#loadEither">loadEither</a></li><li><a href="global.html#loadExtBlkRef">loadExtBlkRef</a></li><li><a href="global.html#loadExtraCurrencyCollection">loadExtraCurrencyCollection</a></li><li><a href="global.html#loadFutureSplitMerge">loadFutureSplitMerge</a></li><li><a href="global.html#loadGasLimitsPrices">loadGasLimitsPrices</a></li><li><a href="global.html#loadGlobalVersion">loadGlobalVersion</a></li><li><a href="global.html#loadGrams">loadGrams</a></li><li><a href="global.html#loadHASH_UPDATE">loadHASH_UPDATE</a></li><li><a href="global.html#loadHashmap">loadHashmap</a></li><li><a href="global.html#loadHashmapAug">loadHashmapAug</a></li><li><a href="global.html#loadHashmapAugE">loadHashmapAugE</a></li><li><a href="global.html#loadHashmapE">loadHashmapE</a></li><li><a href="global.html#loadInt8">loadInt8</a></li><li><a href="global.html#loadInt16">loadInt16</a></li><li><a href="global.html#loadInt32">loadInt32</a></li><li><a href="global.html#loadKeyExtBlkRef">loadKeyExtBlkRef</a></li><li><a href="global.html#loadKeyMaxLt">loadKeyMaxLt</a></li><li><a href="global.html#loadMaybe">loadMaybe</a></li><li><a href="global.html#loadMaybeRef">loadMaybeRef</a></li><li><a href="global.html#loadMcBlockExtra">loadMcBlockExtra</a></li><li><a href="global.html#loadMcStateExtra">loadMcStateExtra</a></li><li><a href="global.html#loadMERKLE_UPDATE">loadMERKLE_UPDATE</a></li><li><a href="global.html#loadMessage">loadMessage</a></li><li><a href="global.html#loadMsgAddressExt">loadMsgAddressExt</a></li><li><a href="global.html#loadMsgAddressInt">loadMsgAddressInt</a></li><li><a href="global.html#loadMsgForwardPrices">loadMsgForwardPrices</a></li><li><a href="global.html#loadOldMcBlocksInfo">loadOldMcBlocksInfo</a></li><li><a href="global.html#loadParamLimits">loadParamLimits</a></li><li><a href="global.html#loadRefIfExist">loadRefIfExist</a></li><li><a href="global.html#loadShardAccount">loadShardAccount</a></li><li><a href="global.html#loadShardAccountBlocks">loadShardAccountBlocks</a></li><li><a href="global.html#loadShardAccounts">loadShardAccounts</a></li><li><a href="global.html#loadShardDescr">loadShardDescr</a></li><li><a href="global.html#loadShardFeeCreated">loadShardFeeCreated</a></li><li><a href="global.html#loadShardFees">loadShardFees</a></li><li><a href="global.html#loadShardHashes">loadShardHashes</a></li><li><a href="global.html#loadShardIdent">loadShardIdent</a></li><li><a href="global.html#loadShardStateUnsplit">loadShardStateUnsplit</a></li><li><a href="global.html#loadSigPubKey">loadSigPubKey</a></li><li><a href="global.html#loadStateInit">loadStateInit</a></li><li><a href="global.html#loadStorageInfo">loadStorageInfo</a></li><li><a href="global.html#loadStoragePrices">loadStoragePrices</a></li><li><a href="global.html#loadStorageUsed">loadStorageUsed</a></li><li><a href="global.html#loadStorageUsedShort">loadStorageUsedShort</a></li><li><a href="global.html#loadTickTock">loadTickTock</a></li><li><a href="global.html#loadTrActionPhase">loadTrActionPhase</a></li><li><a href="global.html#loadTransaction">loadTransaction</a></li><li><a href="global.html#loadTransactionDescr">loadTransactionDescr</a></li><li><a href="global.html#loadTrBouncePhase">loadTrBouncePhase</a></li><li><a href="global.html#loadTrComputePhase">loadTrComputePhase</a></li><li><a href="global.html#loadTrCreditPhase">loadTrCreditPhase</a></li><li><a href="global.html#loadTrStoragePhase">loadTrStoragePhase</a></li><li><a href="global.html#loadUint">loadUint</a></li><li><a href="global.html#loadUint8">loadUint8</a></li><li><a href="global.html#loadUint16">loadUint16</a></li><li><a href="global.html#loadUint32">loadUint32</a></li><li><a href="global.html#loadUint64">loadUint64</a></li><li><a href="global.html#loadUintLeq">loadUintLeq</a></li><li><a href="global.html#loadUintLess">loadUintLess</a></li><li><a href="global.html#loadValidatorDescr">loadValidatorDescr</a></li><li><a href="global.html#loadValidatorInfo">loadValidatorInfo</a></li><li><a href="global.html#loadValidatorSet">loadValidatorSet</a></li><li><a href="global.html#loadValueFlow">loadValueFlow</a></li><li><a href="global.html#loadVarUInteger">loadVarUInteger</a></li><li><a href="global.html#loadWorkchainDescr">loadWorkchainDescr</a></li><li><a href="global.html#loadWorkchainFormat1">loadWorkchainFormat1</a></li><li><a href="global.html#readNBytesUIntFromArray">readNBytesUIntFromArray</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runLocal">runLocal</a></li><li><a href="global.html#sha256">sha256</a></li><li><a href="global.html#sha512">sha512</a></li><li><a href="global.html#stringToArray">stringToArray</a></li><li><a href="global.html#stringToBase64">stringToBase64</a></li><li><a href="global.html#stringToBytes">stringToBytes</a></li><li><a href="global.html#toNano">toNano</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.5</a> on Tue Sep 01 2020 21:46:48 GMT+0300 (Moscow Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

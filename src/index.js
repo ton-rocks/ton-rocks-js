@@ -1,71 +1,74 @@
 const utils = require("./utils");
-const Address = require("./utils/Address").default;
-utils.Address = Address;
-const boc = require("./boc");
-const HttpProvider = require("./providers").default;
-const {Contract} = require("./contract");
-const Wallets = require("./contract/wallet").default;
-const version = '0.0.9';
+const types = require("./types");
 
-class TonWeb {
-    constructor(provider) {
+const providers = require("./providers");
+const configs = require("./configs");
+
+const {Contract} = require('./contract/Contract');
+
+const {AbiContract} = require('./contract/AbiContract');
+const {AbiPackages} = require('./contract/abi');
+
+const {ClassicContract} = require('./contract/ClassicContract');
+const ClassicContracts = require("./contract/classic");
+const ClassicWallets = require("./contract/classic/wallet");
+
+const bc = require("./blockchain");
+const Storages = require("./providers/Storage");
+
+const version = '0.1.0';
+
+class TonRocks {
+    constructor(provider, storage) {
         this.version = version;
+
+        this.types = types;
         this.utils = utils;
-        this.Address = Address;
-        this.boc = boc;
+
+        this.bc = bc;
+
+        this.bc.Block._provider = provider;
+        if (storage) {
+            this.bc.Block._storage = storage;
+        }
+        else if (typeof window !== 'undefined') {
+            this.bc.Block._storage = new Storages.BrowserStorage('default');
+        }
+
         this.Contract = Contract;
+        this.Contract._provider = provider;
+        this.AbiContract = AbiContract;
+        this.AbiPackages = AbiPackages;
+        this.ClassicContract = ClassicContract;
+        this.ClassicWallets = ClassicWallets;
+        this.ClassicContracts = ClassicContracts;
 
-        this.provider = provider || new HttpProvider();
-        this.wallet = new Wallets(this.provider);
-    }
-
-    /**
-     * Use this method to get transaction history of a given address.
-     * @param address   {Address | string}
-     * @param limit?    {number}
-     * @return array of transaction objects
-     */
-    async getTransactions(address, limit = 20) {
-        return this.provider.getTransactions(address.toString(), limit);
-    };
-
-    /**
-     * @param address   {Address | string}
-     * @return {Promise<string>} - The current balance for the given address in nanograms.
-     */
-    async getBalance(address) {
-        return this.provider.getBalance(address.toString());
-    }
-
-    /**
-     * Use this method to send serialized boc file: fully packed and serialized external message.
-     * @param bytes {Uint8Array}
-     */
-    async sendBoc(bytes) {
-        return this.provider.sendBoc(utils.bytesToBase64(bytes));
-    }
-
-    /**
-     * Invoke get-method of smart contract
-     * @param address   {Address | string}    contract address
-     * @param method   {string | number}        method name or method id
-     * @param params?   Array of stack elements: [['num',3], ['cell', cell_object], ['slice', slice_object]]
-     */
-    async call(address, method, params = []) {
-        return this.provider.call(address.toString(), method, params);
+        this.providers = providers;
+        this.configs = configs;
+        this.storages = Storages;
     }
 }
 
-TonWeb.version = version;
-TonWeb.utils = utils;
-TonWeb.Address = Address;
-TonWeb.boc = boc;
-TonWeb.HttpProvider = HttpProvider;
-TonWeb.Contract = Contract;
-TonWeb.Wallets = Wallets;
+TonRocks.version = version;
+
+TonRocks.types = types;
+TonRocks.utils = utils;
+
+TonRocks.bc = bc;
+
+TonRocks.Contract = Contract;
+TonRocks.AbiContract = AbiContract;
+TonRocks.AbiPackages = AbiPackages;
+TonRocks.ClassicContract = ClassicContract;
+TonRocks.ClassicWallets = ClassicWallets;
+TonRocks.ClassicContracts = ClassicContracts;
+
+TonRocks.providers = providers;
+TonRocks.configs = configs;
+TonRocks.storages = Storages;
 
 if (typeof window !== 'undefined') {
-    window.TonWeb = TonWeb;
+    window.TonRocks = TonRocks;
 }
 
-module.exports = TonWeb;
+module.exports = TonRocks;

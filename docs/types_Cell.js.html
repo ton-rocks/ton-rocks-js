@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: types/Cell.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: types/Cell.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const {BitString} = require("./BitString");
+const {bytesToBase64, compareBytes, concatBytes, crc32c, hexToBytes, bytesToHex, readNBytesUIntFromArray, sha256} = require("../utils");
+
+const reachBocMagicPrefix = hexToBytes('B5EE9C72');
+const leanBocMagicPrefix = hexToBytes('68ff65f3');
+const leanBocMagicPrefixCRC = hexToBytes('acc3a728');
+
+const hash_bytes = 32;
+const depth_bytes = 2;
+
+
+var DEBUG = false;
+function debug_log() {
+    if ( DEBUG ) {
+        console.log.apply(this, arguments);
+    }
+}
+
+/**
+ * TON Cell class
+ */
+class Cell {
+
+    /**
+     * Creates empty Cell
+     */
+    constructor() {
+        this._ = "Cell";
+        this.bits = new BitString(1023);
+        this.refs = [];
+        this.isExotic = false;
+        this.type = Cell.OrdinaryCell;
+        this.hasHashes = false;
+        this.levelMask = 0;
+        this.hashes = [];
+        this.depth = [];
+    }
+
+    /**
+     * @private
+     * @returns {number}
+     */
+    getLevelFromMask(mask) {
+        for (let i = 0; i &lt;= 3; i++) {
+            if (!mask) {
+                return i;
+            }
+            mask = mask >> 1;
+        }
+        return 3;
+    }
+
+    /**
+     * @private
+     * @returns {number}
+     */
+    getHashesCountFromMask(mask) {
+        let n = 0;
+        for (let i = 0; i &lt; 3; i++) {
+            n += (mask &amp; 1);
+            mask = mask >> 1;
+        }
+        return n+1; // 1 repr + up to 3 higher hashes
+    }
+
+    /**
+     * @private
+     * @returns {number}
+     */
+    getLevel() {
+        return this.getLevelFromMask(this.levelMask &amp; 7);
+    }
+
+    /**
+     * @private
+     * @returns {number}
+     */
+    getHashesCount() {
+        return this.getHashesCountFromMask(this.levelMask &amp; 7)
+    }
+
+    /**
+     * @private
+     * @returns {boolean}
+     */
+    isLevelSignificant(level) {
+        const res = level == 0 || ((this.levelMask >> (level - 1)) % 2 != 0);
+        return res;
+    }
+
+    /**
+     * @private
+     * @returns {number}
+     */
+    applyLevelMask(level) {
+        return (this.levelMask &amp; ((1 &lt;&lt; level) - 1));
+    }
+
+    /**
+     * Gets Cell tree from BOC
+     * 
+     * @param {string | UInt8Array} serializedBOC  
+     * @returns {Cell}
+     */
+    static async fromBoc(serializedBoc) {
+        return await deserializeBoc(serializedBoc);
+    }
+
+    /**
+     * Writes another cell to this cell
+     * 
+     * @param {Cell} anotherCell
+     */
+    writeCell(anotherCell) {
+        // XXX we do not check that there are anough place in cell
+        this.bits.writeBitString(anotherCell.bits);
+        this.refs = this.refs.concat(anotherCell.refs);
+    }
+
+    /**
+     * @private
+     * @returns {number}
+     */
+    getLevelMask() {
+        if (this.isExotic &amp;&amp; this.type != Cell.LibraryCell) {
+            switch (this.type) {
+                case Cell.PrunnedBranchCell:
+                    // set it manually 
+                    return this.levelMask;
+                case Cell.MerkleProofCell:
+                    this.levelMask = this.refs[0].getLevelMask() >> 1;
+                    return this.levelMask;
+                case Cell.MerkleUpdateCell:
+                    this.levelMask = (this.refs[0].getLevelMask() | this.refs[1].getLevelMask()) >> 1;
+                    return this.levelMask;
+                default:
+                    throw Error("Unknown special cell type");
+            }
+        } else {
+            let levelMask = 0;
+            for (let k in this.refs) {
+                levelMask |= this.refs[k].getLevelMask();
+            }
+            this.levelMask = levelMask;
+            return levelMask;
+        }
+    }
+
+    /**
+     * @private
+     * @returns {number}
+     */
+    isExplicitlyStoredHashes() {
+        return 0;
+    }
+
+    /**
+     * Gets cell hash of level `level`
+     * For representation hash level = 0
+     * 
+     * @param {number} level Level of hash
+     */
+    getHash(level=0) {
+        let hash_i = this.getHashesCountFromMask(this.applyLevelMask(level)) - 1;
+        if (this.type == Cell.PrunnedBranchCell) {
+            const this_hash_i = this.getHashesCount() - 1;
+            if (hash_i != this_hash_i) {
+                return this.bits.getRange(16 + hash_i * hash_bytes * 8, 256);
+            }
+            hash_i = 0;
+        }
+        return this.hashes[hash_i];
+    }
+
+    /**
+     * Gets depth of cell
+     * 
+     * @returns {number} level Level of depth
+     */
+    getDepth(level=0) {
+        let hash_i = this.getHashesCountFromMask(this.applyLevelMask(level)) - 1;
+        if (this.type == Cell.PrunnedBranchCell) {
+            const this_hash_i = this.getHashesCount() - 1;
+            if (hash_i != this_hash_i) {
+                return this.bits.readUint16(16 + this_hash_i * hash_bytes * 8 + hash_i * depth_bytes * 8);
+            }
+            hash_i = 0;
+        }
+        return this.depth[hash_i];
+    }
+
+    /**
+     * @private
+     * @returns {Uint8Array}
+     */
+    depthToArray(depth) {
+        const d = Uint8Array.from({length: 2}, () => 0);
+        d[1] = depth % 256;
+        d[0] = Math.floor(depth / 256);
+        return d;
+    }
+
+    /**
+     * @private
+     * @returns {Uint8Array}
+     */
+    getRefsDescriptor(levelMask) {
+        levelMask = levelMask === undefined ? this.getLevelMask() : levelMask;
+        const d1 = Uint8Array.from({length: 1}, () => 0);
+        //d1[0] = this.refs.length + this.isExotic * 8 + this.hasHashes * 16 + levelMask * 32;
+        // ton node variant used
+        d1[0] = this.refs.length + this.isExotic * 8 + levelMask * 32;
+        return d1;
+    }
+
+    /**
+     * @private
+     * @returns {Uint8Array}
+     */
+    getBitsDescriptor() {
+        const d2 = Uint8Array.from({length: 1}, () => 0);
+        d2[0] = Math.ceil(this.bits.cursor / 8) + Math.floor(this.bits.cursor / 8);
+        return d2;
+    }
+
+    /**
+     * @private
+     * @returns {Uint8Array}
+     */
+    getDataWithDescriptors() {
+        const d1 = this.getRefsDescriptor();
+        const d2 = this.getBitsDescriptor();
+        const tuBits = this.bits.getTopUppedArray();
+        return concatBytes(concatBytes(d1, d2), tuBits);
+    }
+
+    /**
+     * @private
+     * @deprecated
+     * @returns {number}
+     */
+    getMaxDepth() {
+        let maxDepth = 0;
+        if (this.refs.length > 0) {
+            for (let k in this.refs) {
+                const i = this.refs[k];
+                if (i.getMaxDepth() > maxDepth) {
+                    maxDepth = i.getMaxDepth();
+                }
+            }
+            maxDepth = maxDepth + 1;
+        }
+        return maxDepth;
+    }
+
+    /**
+     * @private
+     * @deprecated
+     * @returns {Uint8Array}
+     */
+    getMaxDepthAsArray() {
+        const maxDepth = this.getMaxDepth();
+        const d = Uint8Array.from({length: 2}, () => 0);
+        d[1] = maxDepth % 256;
+        d[0] = Math.floor(maxDepth / 256);
+        return d;
+    }
+
+    /**
+     * @private
+     * @deprecated
+     * @returns {Promise&lt;Uint8Array>}
+     */
+    async getRepr() {
+        const reprArray = [];
+
+        reprArray.push(this.getDataWithDescriptors());
+        for (let k in this.refs) {
+            const i = this.refs[k];
+            //if (i.depth.length > 0) {
+            //    reprArray.push(i.depthToArray(i.getDepth()));
+            //} else 
+            {
+                reprArray.push(i.getMaxDepthAsArray());
+            }
+        }
+        debug_log('add to hash ' + this.refs.length + ' childs');
+        for (let k in this.refs) {
+            const i = this.refs[k];
+            //if (i.hashes.length > 0) {
+            //    const hash = i.getHash();
+            //    debug_log('child hash ', bytesToHex(hash));
+            //    reprArray.push(hash);
+            //} else 
+            {
+                reprArray.push(await i.hash());
+            }
+        }
+        let x = new Uint8Array();
+        for (let k in reprArray) {
+            const i = reprArray[k];
+            x = concatBytes(x, i);
+        }
+        return x;
+    }
+
+    /**
+     * Calculates this cell hashes and depths (without childs)
+     * 
+     * @throws {Error}
+     */
+    async finalize() {
+        let type = Cell.OrdinaryCell;
+        if (this.isExotic) {
+            if (this.bits.length &lt; 8) {
+                throw Error("Not enough data for a special cell");
+            }
+            type = this.bits.readUint8(0);
+            if (type == Cell.OrdinaryCell) {
+                throw Error("Special cell has Ordinary type");
+            }
+        }
+
+        this.type = type;
+
+        switch (type) {
+            case Cell.OrdinaryCell:
+                for (let k in this.refs) {
+                    this.levelMask |= this.refs[k].levelMask;
+                }
+            break;
+
+            case Cell.PrunnedBranchCell:
+            {
+                if (this.refs.length != 0) {
+                    throw Error("PrunnedBranch special cell has a cell reference");
+                }
+                if (this.bits.length &lt; 16) {
+                    throw Error("Not enough data for a PrunnedBranch special cell");
+                }
+                this.levelMask = this.bits.readUint8(8);
+                const level = this.getLevel();
+                if (level > 3 || level == 0) {
+                    throw Error("Prunned Branch has an invalid level");
+                }
+                const new_level_mask = this.applyLevelMask(level - 1);
+                const hashes = this.getHashesCountFromMask(new_level_mask);
+                if (this.bits.length != (2 + hashes * (hash_bytes + depth_bytes)) * 8) {
+                    throw Error("Not enouch data for a PrunnedBranch special cell");
+                }
+            }
+            break;
+        
+            case Cell.LibraryCell:
+                if (this.bits.length != 8 + hash_bytes * 8) {
+                    throw Error("Not enouch data for a Library special cell");
+                }
+            break;
+
+            case Cell.MerkleProofCell:
+            {
+                if (this.bits.length != 8 + (hash_bytes + depth_bytes) * 8) {
+                    throw Error("Not enouch data for a MerkleProof special cell");
+                }
+                if (this.refs.length != 1) {
+                    throw Error("Wrong references count for a MerkleProof special cell");
+                }
+                const merkleHash = this.bits.getRange(8, hash_bytes * 8);
+                const childHash = this.refs[0].getHash(0);
+                if (!compareBytes(merkleHash, childHash)) {
+                    throw Error("Hash mismatch in a MerkleProof special cell " + 
+                        bytesToHex(merkleHash) + " != " + bytesToHex(childHash));
+                }
+                if (this.bits.readUint16(8 + hash_bytes * 8) != this.refs[0].getDepth(0)) {
+                    throw Error("Depth mismatch in a MerkleProof special cell");
+                }
+                this.levelMask = this.refs[0].levelMask >> 1;
+            }
+            break;
+        
+            case Cell.MerkleUpdateCell:
+            {
+                if (this.bits.length != 8 + (hash_bytes + depth_bytes) * 8 * 2) {
+                    throw Error("Not enouch data for a MerkleUpdate special cell");
+                }
+                if (this.refs.length != 2) {
+                    throw Error("Wrong references count for a MerkleUpdate special cell");
+                }
+                const merkleHash0 = this.bits.getRange(8, hash_bytes * 8);
+                const childHash0 = this.refs[0].getHash(0);
+                if (!compareBytes(merkleHash0, childHash0)) {
+                    throw Error("First hash mismatch in a MerkleUpdate special cell " + 
+                        bytesToHex(merkleHash0) + " != " + bytesToHex(childHash0));
+                }
+                const merkleHash1 = this.bits.getRange(8 + hash_bytes * 8, hash_bytes * 8);
+                const childHash1 = this.refs[1].getHash(0);
+                if (!compareBytes(merkleHash1, childHash1)) {
+                    throw Error("Second hash mismatch in a MerkleUpdate special cell " + 
+                        bytesToHex(merkleHash1) + " != " + bytesToHex(childHash1));
+                }
+                if (this.bits.readUint16(8 + 16 * hash_bytes) != this.refs[0].getDepth(0)) {
+                    throw Error("First depth mismatch in a MerkleUpdate special cell");
+                }
+                if (this.bits.readUint16(8 + 16 * hash_bytes + depth_bytes * 8) != this.refs[1].getDepth(0)) {
+                    throw Error("Second depth mismatch in a MerkleUpdate special cell");
+                }
+                this.levelMask = (this.refs[0].levelMask | this.refs[1].levelMask) >> 1;
+            }
+            break;
+        
+            default:
+                throw Error("Unknown special cell type");
+        }
+
+        let total_hash_count = this.getHashesCount();
+        let hash_count = type == Cell.PrunnedBranchCell ? 1 : total_hash_count;
+        let hash_i_offset = total_hash_count - hash_count;
+
+        //debug_log("calc type " + this.type + " hash level " + this.getLevel() + " hash cnt " + total_hash_count + " bitlength " + this.bits.cursor);
+
+        this.hashes = [];
+        this.depth = [];
+        for (let i = 0; i &lt; hash_count; i++) {
+            this.hashes.push(null);
+            this.depth.push(0);
+        }
+
+        for (let level_i = 0, hash_i = 0, level = this.getLevel(); level_i &lt;= level; level_i++) {
+            if (!this.isLevelSignificant(level_i)) {
+                continue;
+            }
+
+            if (hash_i &lt; hash_i_offset) {
+                hash_i++;
+                continue;
+            }
+
+            let repr = new Uint8Array();
+
+            const new_level_mask = this.applyLevelMask(level_i);
+
+            const d1 = this.getRefsDescriptor(new_level_mask);
+            const d2 = this.getBitsDescriptor();
+            repr = concatBytes(repr, d1);
+            repr = concatBytes(repr, d2);
+
+            //debug_log("add to hash d1 " + bytesToHex(d1) + " d2 " + bytesToHex(d2));
+
+            if (hash_i == hash_i_offset) {
+                //debug_log("add to hash data len", (this.bits.length + 7) >> 3);
+
+                if (level_i != 0 &amp;&amp; type != Cell.PrunnedBranchCell)
+                    throw Error("Cannot deserialize cell");
+
+                repr = concatBytes(repr, this.bits.getTopUppedArray());
+
+            } else {
+                //debug_log("add to hash own " + (hash_i - hash_i_offset - 1) + " hash", bytesToHex(this.hashes[hash_i - hash_i_offset - 1]));
+      
+                if (level_i == 0 || type == Cell.PrunnedBranchCell)
+                    throw Error("Cannot deserialize cell");
+
+                repr = concatBytes(repr, this.hashes[hash_i - hash_i_offset - 1]);
+            }
+            //if (type == Cell.MerkleProofCell || type == Cell.PrunnedBranchCell)
+            //    debug_log(" contains", bytesToHex(this.bits.getTopUppedArray()));
+    
+
+            let dest_i = hash_i - hash_i_offset;
+
+            let depth = 0;
+            for (let k in this.refs) {
+                const i = this.refs[k];
+                let child_depth = 0;
+                if (type == Cell.MerkleProofCell || type == Cell.MerkleUpdateCell) {
+                    child_depth = i.getDepth(level_i + 1);
+                } else {
+                    child_depth = i.getDepth(level_i);
+                }
+                repr = concatBytes(repr, i.depthToArray(child_depth));
+                depth = Math.max(depth, child_depth);
+            }
+            if (this.refs.length != 0) {
+                if (depth >= 1024) {
+                    throw Error("Depth is too big");
+                }
+                depth++;
+            }
+            this.depth[dest_i] = depth;
+
+            //debug_log("add to hash " + this.refs.length + " childs");
+            // children hash
+            for (let i = 0; i &lt; this.refs.length; i++) {
+              if (type == Cell.MerkleProofCell || type == Cell.MerkleUpdateCell) {
+                //debug_log("child type " + type + " lvl " + (level_i + 1) + " hash", bytesToHex(this.refs[i].getHash(level_i + 1)));
+                repr = concatBytes(repr, this.refs[i].getHash(level_i + 1));
+              } else {
+                //debug_log("child lvl " + level_i + "hash", bytesToHex(this.refs[i].getHash(level_i)));
+                repr = concatBytes(repr, this.refs[i].getHash(level_i));
+              }
+            }
+
+            this.hashes[dest_i] = new Uint8Array(await sha256(repr));
+            //debug_log("cell type " + this.type + " dest " + dest_i + " hash", bytesToHex(this.hashes[dest_i]));
+            
+            hash_i++;
+        }
+        //debug_log("cell hashes", total_hash_count);
+        //for (let i = 0; i &lt; total_hash_count; i++) {
+        //    debug_log("- %s\n", bytesToHex(this.getHash(i)));
+        //}
+    }
+
+
+    /**
+     * @deprecated
+     * @returns {Promise&lt;Uint8Array>}
+     */
+    async hash() {
+        return new Uint8Array(
+            await sha256(await this.getRepr())
+        );
+    }
+
+    /**
+     * Calculates cell tree hashes and depths (with childs)
+     * 
+     * @throws {Error}
+     */
+    async finalizeTree() {
+        for (let k in this.refs) {
+            await this.refs[k].finalizeTree();
+        }
+        await this.finalize();
+    }
+
+    /**
+     * Converts this cell to object
+     * 
+     * @returns {{}}
+     */
+    toObject() {
+        const res = {};
+        res['data'] = {
+            'b64': bytesToBase64(this.bits.array.slice(0, Math.ceil(this.bits.cursor / 8))),
+            'len': this.bits.cursor
+        };
+        res['refs'] = []
+        for (let k in this.refs) {
+            const i = this.refs[k];
+            res['refs'].push(i.toObject());
+        }
+        return res;
+    }
+
+    /**
+     * Recursively prints cell's content like Fift
+     * 
+     * @returns  {string}
+     */
+    print(indent) {
+        indent = indent || '';
+        let s = indent + 'x{' + this.bits.toHex() + '}\n';
+        for (let k in this.refs) {
+            const i = this.refs[k];
+            s += i.print(indent + ' ');
+        }
+        return s;
+    }
+
+    /**
+     * Creates BOC bytearray from cell tree  &lt;br>
+     * 
+     * serialized_boc#b5ee9c72 has_idx:(## 1) has_crc32c:(## 1) &lt;br>
+     *   has_cache_bits:(## 1) flags:(## 2) { flags = 0 } &lt;br>
+     *   size:(## 3) { size &lt;= 4 } &lt;br>
+     *   off_bytes:(## 8) { off_bytes &lt;= 8 } &lt;br>
+     *   cells:(##(size * 8)) &lt;br>
+     *   roots:(##(size * 8)) { roots >= 1 } &lt;br>
+     *   absent:(##(size * 8)) { roots + absent &lt;= cells } &lt;br>
+     *   tot_cells_size:(##(off_bytes * 8)) &lt;br>
+     *   root_list:(roots * ##(size * 8)) &lt;br>
+     *   index:has_idx?(cells * ##(off_bytes * 8)) &lt;br>
+     *   cell_data:(tot_cells_size * [ uint8 ]) &lt;br>
+     *   crc32c:has_crc32c?uint32 &lt;br>
+     *  = BagOfCells; &lt;br>
+     * 
+     * @param {boolean} has_idx? Include cell index
+     * @param {boolean} hash_crc32? Inclide crc32 checksum
+     * @param {boolean} has_cache_bits? Cache bits value
+     * @param {number} flags? Flags value
+     * @returns {Promise&lt;Uint8Array>}
+     */
+    async toBoc(has_idx = true, hash_crc32 = true, has_cache_bits = false, flags = 0) {
+        const root_cell = this;
+
+        const allcells = root_cell.treeWalk();
+        const topologicalOrder = allcells[1];
+        const cellsIndex = allcells[2];
+
+        let maxIndex = topologicalOrder.length;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            let changed = false;
+            for (let hash in cellsIndex) {
+                let cell = cellsIndex[hash];
+                let cellIndex = cell[0];
+                let childHashList = cell[2];
+                for (let child in childHashList) {
+                    if (cellsIndex[childHashList[child]][0] &lt;= cellIndex) {
+                        cellsIndex[childHashList[child]][0] = maxIndex;
+                        maxIndex++;
+                        changed = true;
+                    }
+                }
+            }
+            if (!changed)
+                break;
+        }
+        topologicalOrder.sort((a,b) => { return cellsIndex[a[0]][0]-cellsIndex[b[0]][0]; });
+
+        for (let i = 0; i &lt; topologicalOrder.length; i++) {
+            cellsIndex[topologicalOrder[i][0]] = i;
+        }
+
+        const cells_num = topologicalOrder.length;
+        const s = cells_num.toString(2).length; // Minimal number of bits to represent reference (unused?)
+        const s_bytes = Math.min(Math.ceil(s / 8), 1);
+        let full_size = 0;
+        let sizeIndex = [];
+        for (let cell_info of topologicalOrder) {
+            full_size = full_size + cell_info[1].bocSerializationSize(cellsIndex, s_bytes);
+            sizeIndex.push(full_size);
+        }
+        const offset_bits = full_size.toString(2).length; // Minimal number of bits to offset/len (unused?)
+        const offset_bytes = Math.max(Math.ceil(offset_bits / 8), 1);
+
+        const serialization = new BitString((1023 + 32 * 4 + 32 * 3) * topologicalOrder.length);
+        serialization.writeBytes(reachBocMagicPrefix);
+        serialization.writeBitArray([has_idx, hash_crc32, has_cache_bits]);
+        serialization.writeUint(flags, 2);
+        serialization.writeUint(s_bytes, 3);
+        serialization.writeUint8(offset_bytes);
+        serialization.writeUint(cells_num, s_bytes * 8);
+        serialization.writeUint(1, s_bytes * 8); // One root for now
+        serialization.writeUint(0, s_bytes * 8); // Complete BOCs only
+        serialization.writeUint(full_size, offset_bytes * 8);
+        serialization.writeUint(0, s_bytes * 8); // Root shoulh have index 0
+        if (has_idx) {
+            topologicalOrder.forEach(
+                (cell_data, index) =>
+                    serialization.writeUint(sizeIndex[index], offset_bytes * 8));
+        }
+        for (let cell_info of topologicalOrder) {
+            const refcell_ser = cell_info[1].serializeForBoc(cellsIndex, s_bytes);
+            serialization.writeBytes(refcell_ser);
+        }
+        let ser_arr = serialization.getTopUppedArray();
+        if (hash_crc32) {
+            ser_arr = concatBytes(ser_arr, crc32c(ser_arr));
+        }
+
+        return ser_arr;
+    }
+
+    /**
+     * @private
+     * @param cellsIndex
+     * @param refSize
+     * @returns {Promise&lt;Uint8Array>}
+     */
+    // eslint-disable-next-line no-unused-vars
+    serializeForBoc(cellsIndex, refSize) {
+        const reprArray = [];
+
+        reprArray.push(this.getDataWithDescriptors());
+        if (this.isExplicitlyStoredHashes()) {
+            throw new Error("Cell hashes explicit storing is not implemented");
+        }
+        for (let k in this.refs) {
+            const i = this.refs[k];
+            const refHash = i.getHash(0);
+            const refIndexInt = cellsIndex[refHash];
+            let refIndexHex = refIndexInt.toString(16);
+            if (refIndexHex.length % 2) {
+                refIndexHex = "0" + refIndexHex;
+            }
+            const reference = hexToBytes(refIndexHex);
+            reprArray.push(reference);
+        }
+        let x = new Uint8Array();
+        for (let k in reprArray) {
+            const i = reprArray[k];
+            x = concatBytes(x, i);
+        }
+        return x;
+    }
+
+    /**
+     * @private
+     * @param cellsIndex
+     * @param refSize
+     * @returns {Promise&lt;number>}
+     */
+    bocSerializationSize(cellsIndex, refSize) {
+        return this.serializeForBoc(cellsIndex, refSize).length;
+    }
+
+    /**
+     * @private
+     * @returns {Object} topologicalOrderArray and indexHashmap
+     */
+    treeWalk() {
+        return treeWalk(this, [], {});
+    }
+}
+
+Cell.OrdinaryCell = 255;
+Cell.PrunnedBranchCell = 1;
+Cell.LibraryCell = 2;
+Cell.MerkleProofCell = 3;
+Cell.MerkleUpdateCell = 4;
+
+/**
+ * @private
+ * @param {Cell} cell
+ * @param {Object} topologicalOrderArray array of pairs: cellHash: Uint8Array, cell: Cell, ...
+ * @param {Object} indexHashmap cellHash: Uint8Array -> cellIndex: number
+ * @returns {Object} topologicalOrderArray and indexHashmap
+ */
+function treeWalk(cell, topologicalOrderArray, indexHashmap) {
+    const cellHash = cell.getHash(0);
+    if (cellHash in indexHashmap) { // Duplication cell
+        return [cellHash, topologicalOrderArray, indexHashmap];
+    }
+    const cellIndex = topologicalOrderArray.length;
+    topologicalOrderArray.push([cellHash, cell]);
+    let childHashList = [];
+    for (let subCell of cell.refs) {
+        const res = treeWalk(subCell, topologicalOrderArray, indexHashmap);
+        childHashList.push(res[0]);
+        topologicalOrderArray = res[1];
+        indexHashmap = res[2];
+    }
+    indexHashmap[cellHash] = [cellIndex, cell, childHashList];
+    return [cellHash, topologicalOrderArray, indexHashmap];
+}
+
+/**
+ * @private
+ * @param {Uint8Array} serializedBoc 
+ */
+function parseBocHeader(serializedBoc) {
+    // snake_case is used to match TON docs
+    if (serializedBoc.length &lt; 4 + 1)
+        throw Error("Not enough bytes for magic prefix");
+    const inputData = serializedBoc; // Save copy for crc32
+    const prefix = serializedBoc.slice(0, 4);
+    serializedBoc = serializedBoc.slice(4);
+    let has_idx, hash_crc32, has_cache_bits, flags, size_bytes;
+    if (compareBytes(prefix, reachBocMagicPrefix)) {
+        const flags_byte = serializedBoc[0];
+        has_idx = flags_byte &amp; 128;
+        hash_crc32 = flags_byte &amp; 64;
+        has_cache_bits = flags_byte &amp; 32;
+        flags = (flags_byte &amp; 16) * 2 + (flags_byte &amp; 8);
+        size_bytes = flags_byte % 8;
+    }
+    if (compareBytes(prefix, leanBocMagicPrefix)) {
+        has_idx = 1;
+        hash_crc32 = 0;
+        has_cache_bits = 0;
+        flags = 0;
+        size_bytes = serializedBoc[0];
+    }
+    if (compareBytes(prefix, leanBocMagicPrefixCRC)) {
+        has_idx = 1;
+        hash_crc32 = 1;
+        has_cache_bits = 0;
+        flags = 0;
+        size_bytes = serializedBoc[0];
+    }
+    serializedBoc = serializedBoc.slice(1);
+    if (serializedBoc.length &lt; 1 + 5 * size_bytes)
+        throw Error("Not enough bytes for encoding cells counters");
+    const offset_bytes = serializedBoc[0];
+    serializedBoc = serializedBoc.slice(1);
+    const cells_num = readNBytesUIntFromArray(size_bytes, serializedBoc);
+    serializedBoc = serializedBoc.slice(size_bytes);
+    const roots_num = readNBytesUIntFromArray(size_bytes, serializedBoc);
+    serializedBoc = serializedBoc.slice(size_bytes);
+    const absent_num = readNBytesUIntFromArray(size_bytes, serializedBoc);
+    serializedBoc = serializedBoc.slice(size_bytes);
+    const tot_cells_size = readNBytesUIntFromArray(offset_bytes, serializedBoc);
+    serializedBoc = serializedBoc.slice(offset_bytes);
+    if (serializedBoc.length &lt; roots_num * size_bytes)
+        throw Error("Not enough bytes for encoding root cells hashes");
+    let root_list = [];
+    for (let c = 0; c &lt; roots_num; c++) {
+        root_list.push(readNBytesUIntFromArray(size_bytes, serializedBoc));
+        serializedBoc = serializedBoc.slice(size_bytes);
+    }
+    let index = false;
+    if (has_idx) {
+        index = [];
+        if (serializedBoc.length &lt; offset_bytes * cells_num)
+            throw Error("Not enough bytes for index encoding");
+        for (let c = 0; c &lt; cells_num; c++) {
+            index.push(readNBytesUIntFromArray(offset_bytes, serializedBoc));
+            serializedBoc = serializedBoc.slice(offset_bytes);
+        }
+    }
+
+    if (serializedBoc.length &lt; tot_cells_size)
+        throw Error("Not enough bytes for cells data");
+    const cells_data = serializedBoc.slice(0, tot_cells_size);
+    serializedBoc = serializedBoc.slice(tot_cells_size);
+    if (hash_crc32) {
+        if (serializedBoc.length &lt; 4)
+            throw Error("Not enough bytes for crc32c hashsum");
+        const length = inputData.length;
+        if (!compareBytes(crc32c(inputData.slice(0, length - 4)), serializedBoc.slice(0, 4)))
+            throw Error("Crc32c hashsum mismatch");
+        serializedBoc = serializedBoc.slice(4);
+    }
+    if (serializedBoc.length)
+        throw Error("Too much bytes in BoC serialization");
+    return {
+        has_idx: has_idx, hash_crc32: hash_crc32, has_cache_bits: has_cache_bits, flags: flags, size_bytes: size_bytes,
+        off_bytes: offset_bytes, cells_num: cells_num, roots_num: roots_num, absent_num: absent_num,
+        tot_cells_size: tot_cells_size, root_list: root_list, index: index,
+        cells_data: cells_data
+    };
+}
+
+
+/**
+ * @private
+ * @param {*} cellData 
+ * @param {*} referenceIndexSize 
+ */
+function deserializeCellData(cellData, referenceIndexSize) {
+    if (cellData.length &lt; 2)
+        throw Error("Not enough bytes to encode cell descriptors");
+
+    const d1 = cellData[0], d2 = cellData[1];
+    cellData = cellData.slice(2);
+
+    const refNum = d1 &amp; 7;
+
+    if (refNum > 4) {
+        throw Error("Cannot deserialize absent cell");
+    }
+
+    const dataByteSize = (d2 >> 1) + (d2 &amp; 1);
+    const fullfilledBytes = (d2 &amp; 1) == 0;
+
+    let cell = new Cell();
+
+    cell.levelMask = d1 >> 5;
+    cell.isExotic = (d1 &amp; 8) != 0;
+    cell.hasHashes = (d1 &amp; 16) != 0;
+
+    const hashesSize = cell.hasHashes ? cell.getHashesCount() * hash_bytes : 0;
+    const depthSize = cell.hasHashes ? cell.getHashesCount() * 2 : 0;
+
+    if (cellData.length &lt; hashesSize + depthSize + dataByteSize + referenceIndexSize * refNum)
+        throw Error("Not enough bytes to encode cell data");
+
+    // skip hashes &amp; depth
+    cellData = cellData.slice(hashesSize);
+    cellData = cellData.slice(depthSize);
+
+    // load data
+    cell.bits.setTopUppedArray(cellData.slice(0, dataByteSize), fullfilledBytes);
+    cellData = cellData.slice(dataByteSize);
+
+    // load refs
+    for (let r = 0; r &lt; refNum; r++) {
+        cell.refs.push(readNBytesUIntFromArray(referenceIndexSize, cellData));
+        cellData = cellData.slice(referenceIndexSize);
+    }
+
+    debug_log("exo", cell.isExotic, "l", cell.levelMask, 't', cell.bits.readUint8(0), "hasH", cell.hasHashes, "size", dataByteSize, "refs", refNum, "bitlength", cell.bits.cursor);
+    return {cell: cell, residue: cellData};
+}
+
+
+/**
+ * @private
+ * @param {string | UInt8Array} serializedBOC
+ * @returns {Cell}
+ */
+async function deserializeBoc(serializedBoc) {
+    if (typeof (serializedBoc) == 'string') {
+        serializedBoc = hexToBytes(serializedBoc);
+    }
+    const header = parseBocHeader(serializedBoc);
+    let cells_data = header.cells_data;
+    let cells_array = [];
+    for (let ci = 0; ci &lt; header.cells_num; ci++) {
+        let dd = deserializeCellData(cells_data, header.size_bytes);
+        cells_data = dd.residue;
+        cells_array.push(dd.cell);
+    }
+    for (let ci = header.cells_num - 1; ci >= 0; ci--) {
+        let c = cells_array[ci];
+        for (let ri = 0; ri &lt; c.refs.length; ri++) {
+            const r = c.refs[ri];
+            if (r &lt; ci) {
+                throw Error("Topological order is broken");
+            }
+            c.refs[ri] = cells_array[r];
+        }
+        await c.finalize();
+    }
+    let root_cells = [];
+    for (let ri of header.root_list) {
+        root_cells.push(cells_array[ri]);
+    }
+    return root_cells;
+}
+
+module.exports = {Cell};</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbiContract.html">AbiContract</a></li><li><a href="Address.html">Address</a></li><li><a href="BitString.html">BitString</a></li><li><a href="Block.html">Block</a></li><li><a href="BlockId.html">BlockId</a></li><li><a href="BlockParser.html">BlockParser</a></li><li><a href="BrowserStorage.html">BrowserStorage</a></li><li><a href="Cell.html">Cell</a></li><li><a href="ClassicContract.html">ClassicContract</a></li><li><a href="Contract.html">Contract</a></li><li><a href="Hashmap.html">Hashmap</a></li><li><a href="HashmapAug.html">HashmapAug</a></li><li><a href="HashmapAugE.html">HashmapAugE</a></li><li><a href="HashmapE.html">HashmapE</a></li><li><a href="LiteClient.html">LiteClient</a></li><li><a href="Storage.html">Storage</a></li></ul><h3>Global</h3><ul><li><a href="global.html#base64ToBytes">base64ToBytes</a></li><li><a href="global.html#base64toString">base64toString</a></li><li><a href="global.html#bytesToBase64">bytesToBase64</a></li><li><a href="global.html#bytesToBinString">bytesToBinString</a></li><li><a href="global.html#bytesToHex">bytesToHex</a></li><li><a href="global.html#bytesToString">bytesToString</a></li><li><a href="global.html#compareBytes">compareBytes</a></li><li><a href="global.html#concatBytes">concatBytes</a></li><li><a href="global.html#crc16">crc16</a></li><li><a href="global.html#crc32c">crc32c</a></li><li><a href="global.html#estimateFee">estimateFee</a></li><li><a href="global.html#fromNano">fromNano</a></li><li><a href="global.html#getAddress">getAddress</a></li><li><a href="global.html#getMessage">getMessage</a></li><li><a href="global.html#hexToBytes">hexToBytes</a></li><li><a href="global.html#loadAccount">loadAccount</a></li><li><a href="global.html#loadAccountBlock">loadAccountBlock</a></li><li><a href="global.html#loadAccountState">loadAccountState</a></li><li><a href="global.html#loadAccountStatus">loadAccountStatus</a></li><li><a href="global.html#loadAccountStorage">loadAccountStorage</a></li><li><a href="global.html#loadAccStatusChange">loadAccStatusChange</a></li><li><a href="global.html#loadAny">loadAny</a></li><li><a href="global.html#loadAnycast">loadAnycast</a></li><li><a href="global.html#loadBinTree">loadBinTree</a></li><li><a href="global.html#loadBit">loadBit</a></li><li><a href="global.html#loadBits">loadBits</a></li><li><a href="global.html#loadBlkMasterInfo">loadBlkMasterInfo</a></li><li><a href="global.html#loadBlkPrevInfo">loadBlkPrevInfo</a></li><li><a href="global.html#loadBlock">loadBlock</a></li><li><a href="global.html#loadBlockCreateFees">loadBlockCreateFees</a></li><li><a href="global.html#loadBlockCreateStats">loadBlockCreateStats</a></li><li><a href="global.html#loadBlockExtra">loadBlockExtra</a></li><li><a href="global.html#loadBlockIdExt">loadBlockIdExt</a></li><li><a href="global.html#loadBlockInfo">loadBlockInfo</a></li><li><a href="global.html#loadBlockLimits">loadBlockLimits</a></li><li><a href="global.html#loadBool">loadBool</a></li><li><a href="global.html#loadCatchainConfig">loadCatchainConfig</a></li><li><a href="global.html#loadCommonMsgInfo">loadCommonMsgInfo</a></li><li><a href="global.html#loadComplaintPricing">loadComplaintPricing</a></li><li><a href="global.html#loadComputeSkipReason">loadComputeSkipReason</a></li><li><a href="global.html#loadConfigParam">loadConfigParam</a></li><li><a href="global.html#loadConfigParam0">loadConfigParam0</a></li><li><a href="global.html#loadConfigParam1">loadConfigParam1</a></li><li><a href="global.html#loadConfigParam2">loadConfigParam2</a></li><li><a href="global.html#loadConfigParam3">loadConfigParam3</a></li><li><a href="global.html#loadConfigParam4">loadConfigParam4</a></li><li><a href="global.html#loadConfigParam6">loadConfigParam6</a></li><li><a href="global.html#loadConfigParam7">loadConfigParam7</a></li><li><a href="global.html#loadConfigParam8">loadConfigParam8</a></li><li><a href="global.html#loadConfigParam9">loadConfigParam9</a></li><li><a href="global.html#loadConfigParam10">loadConfigParam10</a></li><li><a href="global.html#loadConfigParam11">loadConfigParam11</a></li><li><a href="global.html#loadConfigParam12">loadConfigParam12</a></li><li><a href="global.html#loadConfigParam13">loadConfigParam13</a></li><li><a href="global.html#loadConfigParam14">loadConfigParam14</a></li><li><a href="global.html#loadConfigParam15">loadConfigParam15</a></li><li><a href="global.html#loadConfigParam16">loadConfigParam16</a></li><li><a href="global.html#loadConfigParam17">loadConfigParam17</a></li><li><a href="global.html#loadConfigParam18">loadConfigParam18</a></li><li><a href="global.html#loadConfigParam20">loadConfigParam20</a></li><li><a href="global.html#loadConfigParam21">loadConfigParam21</a></li><li><a href="global.html#loadConfigParam22">loadConfigParam22</a></li><li><a href="global.html#loadConfigParam23">loadConfigParam23</a></li><li><a href="global.html#loadConfigParam24">loadConfigParam24</a></li><li><a href="global.html#loadConfigParam25">loadConfigParam25</a></li><li><a href="global.html#loadConfigParam28">loadConfigParam28</a></li><li><a href="global.html#loadConfigParam29">loadConfigParam29</a></li><li><a href="global.html#loadConfigParam31">loadConfigParam31</a></li><li><a href="global.html#loadConfigParam32">loadConfigParam32</a></li><li><a href="global.html#loadConfigParam33">loadConfigParam33</a></li><li><a href="global.html#loadConfigParam34">loadConfigParam34</a></li><li><a href="global.html#loadConfigParam35">loadConfigParam35</a></li><li><a href="global.html#loadConfigParam36">loadConfigParam36</a></li><li><a href="global.html#loadConfigParam37">loadConfigParam37</a></li><li><a href="global.html#loadConfigParams">loadConfigParams</a></li><li><a href="global.html#loadConfigProposalSetup">loadConfigProposalSetup</a></li><li><a href="global.html#loadConfigVotingSetup">loadConfigVotingSetup</a></li><li><a href="global.html#loadConsensusConfig">loadConsensusConfig</a></li><li><a href="global.html#loadCounters">loadCounters</a></li><li><a href="global.html#loadCreatorStats">loadCreatorStats</a></li><li><a href="global.html#loadCryptoSignature">loadCryptoSignature</a></li><li><a href="global.html#loadCryptoSignaturePair">loadCryptoSignaturePair</a></li><li><a href="global.html#loadCurrencyCollection">loadCurrencyCollection</a></li><li><a href="global.html#loadDepthBalanceInfo">loadDepthBalanceInfo</a></li><li><a href="global.html#loadEither">loadEither</a></li><li><a href="global.html#loadExtBlkRef">loadExtBlkRef</a></li><li><a href="global.html#loadExtraCurrencyCollection">loadExtraCurrencyCollection</a></li><li><a href="global.html#loadFutureSplitMerge">loadFutureSplitMerge</a></li><li><a href="global.html#loadGasLimitsPrices">loadGasLimitsPrices</a></li><li><a href="global.html#loadGlobalVersion">loadGlobalVersion</a></li><li><a href="global.html#loadGrams">loadGrams</a></li><li><a href="global.html#loadHASH_UPDATE">loadHASH_UPDATE</a></li><li><a href="global.html#loadHashmap">loadHashmap</a></li><li><a href="global.html#loadHashmapAug">loadHashmapAug</a></li><li><a href="global.html#loadHashmapAugE">loadHashmapAugE</a></li><li><a href="global.html#loadHashmapE">loadHashmapE</a></li><li><a href="global.html#loadInt8">loadInt8</a></li><li><a href="global.html#loadInt16">loadInt16</a></li><li><a href="global.html#loadInt32">loadInt32</a></li><li><a href="global.html#loadKeyExtBlkRef">loadKeyExtBlkRef</a></li><li><a href="global.html#loadKeyMaxLt">loadKeyMaxLt</a></li><li><a href="global.html#loadMaybe">loadMaybe</a></li><li><a href="global.html#loadMaybeRef">loadMaybeRef</a></li><li><a href="global.html#loadMcBlockExtra">loadMcBlockExtra</a></li><li><a href="global.html#loadMcStateExtra">loadMcStateExtra</a></li><li><a href="global.html#loadMERKLE_UPDATE">loadMERKLE_UPDATE</a></li><li><a href="global.html#loadMessage">loadMessage</a></li><li><a href="global.html#loadMsgAddressExt">loadMsgAddressExt</a></li><li><a href="global.html#loadMsgAddressInt">loadMsgAddressInt</a></li><li><a href="global.html#loadMsgForwardPrices">loadMsgForwardPrices</a></li><li><a href="global.html#loadOldMcBlocksInfo">loadOldMcBlocksInfo</a></li><li><a href="global.html#loadParamLimits">loadParamLimits</a></li><li><a href="global.html#loadRefIfExist">loadRefIfExist</a></li><li><a href="global.html#loadShardAccount">loadShardAccount</a></li><li><a href="global.html#loadShardAccountBlocks">loadShardAccountBlocks</a></li><li><a href="global.html#loadShardAccounts">loadShardAccounts</a></li><li><a href="global.html#loadShardDescr">loadShardDescr</a></li><li><a href="global.html#loadShardFeeCreated">loadShardFeeCreated</a></li><li><a href="global.html#loadShardFees">loadShardFees</a></li><li><a href="global.html#loadShardHashes">loadShardHashes</a></li><li><a href="global.html#loadShardIdent">loadShardIdent</a></li><li><a href="global.html#loadShardStateUnsplit">loadShardStateUnsplit</a></li><li><a href="global.html#loadSigPubKey">loadSigPubKey</a></li><li><a href="global.html#loadStateInit">loadStateInit</a></li><li><a href="global.html#loadStorageInfo">loadStorageInfo</a></li><li><a href="global.html#loadStoragePrices">loadStoragePrices</a></li><li><a href="global.html#loadStorageUsed">loadStorageUsed</a></li><li><a href="global.html#loadStorageUsedShort">loadStorageUsedShort</a></li><li><a href="global.html#loadTickTock">loadTickTock</a></li><li><a href="global.html#loadTrActionPhase">loadTrActionPhase</a></li><li><a href="global.html#loadTransaction">loadTransaction</a></li><li><a href="global.html#loadTransactionDescr">loadTransactionDescr</a></li><li><a href="global.html#loadTrBouncePhase">loadTrBouncePhase</a></li><li><a href="global.html#loadTrComputePhase">loadTrComputePhase</a></li><li><a href="global.html#loadTrCreditPhase">loadTrCreditPhase</a></li><li><a href="global.html#loadTrStoragePhase">loadTrStoragePhase</a></li><li><a href="global.html#loadUint">loadUint</a></li><li><a href="global.html#loadUint8">loadUint8</a></li><li><a href="global.html#loadUint16">loadUint16</a></li><li><a href="global.html#loadUint32">loadUint32</a></li><li><a href="global.html#loadUint64">loadUint64</a></li><li><a href="global.html#loadUintLeq">loadUintLeq</a></li><li><a href="global.html#loadUintLess">loadUintLess</a></li><li><a href="global.html#loadValidatorDescr">loadValidatorDescr</a></li><li><a href="global.html#loadValidatorInfo">loadValidatorInfo</a></li><li><a href="global.html#loadValidatorSet">loadValidatorSet</a></li><li><a href="global.html#loadValueFlow">loadValueFlow</a></li><li><a href="global.html#loadVarUInteger">loadVarUInteger</a></li><li><a href="global.html#loadWorkchainDescr">loadWorkchainDescr</a></li><li><a href="global.html#loadWorkchainFormat1">loadWorkchainFormat1</a></li><li><a href="global.html#readNBytesUIntFromArray">readNBytesUIntFromArray</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runLocal">runLocal</a></li><li><a href="global.html#sha256">sha256</a></li><li><a href="global.html#sha512">sha512</a></li><li><a href="global.html#stringToArray">stringToArray</a></li><li><a href="global.html#stringToBase64">stringToBase64</a></li><li><a href="global.html#stringToBytes">stringToBytes</a></li><li><a href="global.html#toNano">toNano</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.5</a> on Tue Sep 01 2020 21:46:49 GMT+0300 (Moscow Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

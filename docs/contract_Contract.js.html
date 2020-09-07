@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: contract/Contract.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: contract/Contract.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const {TONClient, setWasmOptions} = require('ton-client-web-js');
+const {stringToBytes, bytesToString, bytesToBase64, base64ToBytes, bytesToHex, BN, compareBytes} = require('../utils');
+const {Address, Cell} = require('../types');
+const {Block} = require('../blockchain/Block');
+
+
+const AccountType =
+{
+  none: -1,
+  uninit: 0,
+  active: 1,
+  frozen: 2,
+}
+
+const MessageType =
+{
+  int: 0,
+  ext_in: 1,
+  ext_out: 2
+}
+
+const TransactionType =
+{
+  ord: 0,
+  storage: 1,
+  tick_tock: 2
+}
+
+/**
+ * BlockAPI raw abstract type    &lt;br>
+ * 
+ *   interface BlockObject {    &lt;br>
+ *    _: string;    &lt;br>
+ *    cell?: Cell;    &lt;br>
+ *    hash?: Uint8Array;      &lt;br>
+ *  }    &lt;br>
+ * 
+ * @typedef {Object} BlockObject
+ * @property {string} _ Object type string
+ * @property {Cell} cell
+ * @property {Uint8Array} hash
+ */
+
+/**
+ * Account type    &lt;br>
+ * 
+ *  interface Account {    &lt;br>
+ *    type: AccountType;    &lt;br>
+ *    code?: string; // base64    &lt;br>
+ *    data?: string; // base64    &lt;br>
+ *    balance: BN;    &lt;br>
+ *    balance_other?: any;    &lt;br>
+ *    id: string; // address in hex    &lt;br>
+ *    address: Address;    &lt;br>
+ *    state_hash?: Uint8Array;    &lt;br>
+ *    last_trans_id?: TransactionId;    &lt;br>
+ *    last_paid?: number;    &lt;br>
+ *    raw?: BlockObject;    &lt;br>
+ *  }    &lt;br>
+ * 
+ * @typedef {Object} Account
+ * @property {AccountType} type Account type
+ * @property {string} code Account code in base64 format
+ * @property {string} data Account data in base64 format
+ * @property {BN} balance Current balance
+ * @property {any} balance_other Other balance
+ * @property {string} id Address in hex format
+ * @property {Address} address Account address
+ * @property {Uint8Array} state_hash Hash of current state 
+ * @property {TransactionId} last_trans_id Last transaction id
+ * @property {number} last_paid Time of last paid
+ * @property {BlockObject} raw Account in raw format
+ */
+
+/**
+ * Message type    &lt;br>
+ * 
+ *  interface Message {    &lt;br>
+ *    raw: BlockObject;    &lt;br>
+ *    id: string; // hash in hex    &lt;br>
+ *    hash: Uint8Array;    &lt;br>
+ *    type: MessageType;    &lt;br>
+ *    src: Address;    &lt;br>
+ *    dst: Address;    &lt;br>
+ *    bounce?: bool;    &lt;br>
+ *    bounced?: bool;    &lt;br>
+ *    value?: BN;    &lt;br>
+ *    created_at?: number;    &lt;br>
+ *    created_lt?: BN;    &lt;br>
+ *    code?: string; // base64    &lt;br>
+ *    data?: string; // base64    &lt;br>
+ *    body?: string; // base64    &lt;br>
+ *  }    &lt;br>
+ * 
+ * @typedef {Object} Message
+ * @property {BlockObject} raw MEssage in raw format
+ * @property {string} id Message hash in hex format
+ * @property {Uint8Array} hash Message hash
+ * @property {MessageType} type Message type
+ * @property {Address} src Sourse address
+ * @property {Address} dst Destination address
+ * @property {boolean} bounce Bounce option
+ * @property {boolean} bounced Is message bounced
+ * @property {BN} value Value in message
+ * @property {number} created_at Unix time of message creation
+ * @property {BN} created_lt Logical time of message creation
+ * @property {string} code Message code in base64 format (if included)
+ * @property {string} data Message data in base64 format (if included)
+ * @property {string} body Message body in base64 format
+ */
+
+/**
+ * Transaction id type    &lt;br>
+ * 
+ * interface TransactionId {    &lt;br>
+ *   lt: BN;    &lt;br>
+ *   hash: Uint8Array;    &lt;br>
+ * }    &lt;br>
+ * 
+ * @typedef {Object} TransactionId
+ * @property {BN} lt Logical time
+ * @property {Uint8Array} hash Representation hash
+ */
+
+/**
+ * Transaction type    &lt;br>
+ * 
+ *  interface Transaction {    &lt;br>
+ *    id: string; // hash in hex    &lt;br>
+ *    hash: Uint8Array;    &lt;br>
+ *    
+ *    type: TransactionType;    &lt;br>
+ * 
+ *    lt: BN;    &lt;br>
+ *    now: number;    &lt;br>
+ *    prev_trans_id: TransactionId;    &lt;br>
+ *    total_fees: BN;    &lt;br>
+ *    
+ *    orig_status: AccountType;    &lt;br>
+ *    end_status: AccountType;    &lt;br>
+ *    
+ *    in_msg: Message;    &lt;br>
+ *    out_msgs: [Message];    &lt;br>
+ * 
+ *    aborted?: bool;    &lt;br>
+ *    destroyed?: bool;    &lt;br>
+ * 
+ *    old_hash: Uint8Array;    &lt;br>
+ *    new_hash: Uint8Array;    &lt;br>
+ * 
+ *    workchain_id: number;    &lt;br>
+ *    account_addr: Address;    &lt;br>
+ *    account_id: string; // address in hex    &lt;br>
+ *    block_id: BlockId;    &lt;br>
+ *  }    &lt;br>
+ * 
+ * @typedef {Object} Transaction
+ * @property {string} id Representation hash in hex format
+ * @property {Uint8Array} hash Hash
+ * @property {TransactionType} type Transaction type
+ * @property {BN} lt Logical time
+ * @property {number} now Unix time
+ * @property {TransactionId} prev_trans_id Previous transaction id
+ * @property {BN} total_fees Transaction total fees
+ * @property {AccountType} orig_status Account type before transaction
+ * @property {AccountType} end_status Account type after transaction
+ * @property {Message} in_msg Inbound message
+ * @property {Object} out_msgs Outbound messages
+ * @property {boolean} aborted Is transaction aborted
+ * @property {boolean} destroyed
+ * @property {Uint8Array} old_hash Acoount state hash before transaction 
+ * @property {Uint8Array} new_hash Account state hash after transaction
+ * @property {number} workchain_id Workchain id
+ * @property {Address} account_addr Account address
+ * @property {string} account_id Account address in hex format
+ * @property {BlockId} block_id Block id of transaction
+ */
+
+/**
+ * Fees type
+ * 
+ * @typedef {Fees}
+ * @property {BN} gasFee
+ * @property {BN} inMsgFwdFee
+ * @property {BN} outMsgsFwdFee
+ * @property {BN} storageFee
+ * @property {BN} totalAccountFees
+ * @property {BN} totalOutput
+ */
+
+ /**
+  * MessageInfo type
+  * 
+  * @typedef {MessageInfo}
+  * @property {string} messageBodyBase64
+  * @property {number} expire
+  * @property {boolean} signed
+  * @property {string} sign Message sign in hex format (when signed=true)
+  * @property {string} hash Message hash in hex format (when signed=false)
+  */
+
+/**
+ * Abstract contract class
+ */
+class Contract {
+
+  static get AccountType() {
+    return AccountType;
+  }
+
+  static get MessageType() {
+    return MessageType;
+  }
+
+  static get TransactionType() {
+    return TransactionType;
+  }
+
+  /**
+   * Creates base contract class
+   * 
+   * @param {Object} provider 
+   * @param {Object} storage 
+   * @param {Object} client 
+   * @param {Object} config
+   */
+  constructor(provider, storage, client, config) {
+    this.provider = provider || Contract._provider;
+    this.client = client || Contract._client;
+    this.methods = {};
+
+    // Block api object
+    this.block = new Block(provider, storage);
+
+    this.bigBalance = '0x10000000000000';
+
+    this.config = config | {
+      sendTryCount: 10,
+      queryTryCount: 10,
+      expireDefault: 10000,
+      expireExtDefault: 60000,
+      syncMaxDiff: 30,
+      runTimeout: 60000
+    }
+  }
+
+  /**
+   * @private
+   * @param {string} msg 
+   */
+  static debugLog(msg) {
+    console.log(msg);
+  }
+
+  /**
+   * Initializes wasm TVM
+   * 
+   * @returns {Promise}
+   */
+  static async init() {
+    if (Contract._client)
+      return;
+
+    setWasmOptions({
+        debugLog: Contract.debugLog
+    });
+
+    Contract._client = (await TONClient.create({
+        servers: ['']
+    })).contracts;
+  }
+
+  /**
+   * Sends message to TON network
+   * 
+   * @param {Object} message The message object
+   */
+  async sendMessage(message) {
+    let sendRes;
+    for (let j = 0; j &lt; this.config.sendTryCount; j++) {
+      sendRes = await this.block.sendMessage(message.messageBodyBase64);
+      //console.log('sendRes', sendRes);
+      if (sendRes &amp;&amp; sendRes.ok)
+        break;
+    }
+    return sendRes;
+  }
+
+  /**
+   * Loads transaction list
+   * 
+   * @throws {Error} Error description
+   * @param {TransactionId} from From transaction
+   * @param {TransactionId} to To transaction (not including)
+   * @param {number} limit Limit number
+   * @returns {Object} [Transaction]
+   */
+  async getTransactions(from=undefined, to=undefined, limit=Number.MAX_VALUE) {
+    if (!this.address) throw Error('no account address');
+
+    if (!from) {
+      let account = await this._getAccount();
+      if (!account.ok) throw Error('cannot get account state: ' + account.reason);
+      account = await this._convertAccount(account);
+      from = account.last_trans_id;
+      if (account.type === AccountType.none || from.lt.eq(new BN(0))) {
+        return [];
+      }
+    }
+    
+    for (let i = 0; i &lt; this.config.queryTryCount; i++) {
+      let transRes = await this.block.getTransactions(limit,
+                              this.address,
+                              from.lt, from.hash,
+                              to ? to.lt : undefined);
+      if (!transRes.ok) {
+        continue;
+      }
+      let transactions = [];
+      for (let t in transRes.transactionList) {
+        const transaction = transRes.transactionList[t];
+        const blockId = transRes.blockIdList[t];
+        let _trans = await this._convertTransaction(transaction, blockId);
+        transactions.push(_trans);
+      }
+      return transactions;
+    }
+
+    throw Error('Cannot get transactions');
+  }
+
+  /**
+   * Gets raw account state
+   * 
+   * @private
+   * @returns {Promise&lt;{ok:boolean, reason:(Error|undefined), account:(Object|undefined), blockHeader:(Object|undefined), shardState:(Object|undefined), lastTransHash:(Uint32Array|undefined), lastTransLt:(BN|undefined)}>} 
+   */
+  async _getAccount() {
+    let account;
+    let reason;
+    for (let i = 0; i &lt; this.config.queryTryCount; i++) {
+      try {
+        // get latest block
+        const blockId = await this.block.getLatestId();
+        //console.log('latestBlockId', blockId);
+        if (!blockId.ok)
+          throw Error('Cannot get latest block: ' + blockId.reason);
+
+        // check sync status
+        if (Math.abs(blockId.serverDiff) > this.config.syncMaxDiff ||
+          Math.abs(blockId.tonDiff) > this.config.syncMaxDiff)
+          throw Error('Out of sync');
+
+        // validate block
+        const validRes = await this.block.validate(blockId.id);
+        if (!validRes.ok)
+          throw Error('Cannot validate latest block: ' + validRes.reason);
+        if (!validRes.valid)
+          throw Error('Latest block not valid');
+
+        // get account state
+        account = await this.block.getAccountState(blockId.id, this.address);
+        //console.log('account', account);
+        if (!account.ok) 
+          throw Error('Cannot get account state: ' + account.reason);
+
+        break;
+      } catch (e) {
+        console.log('Exception while _getAccount (will retry ' + (this.config.queryTryCount - i - 1) + ' times):', e);
+        reason = e.toString();
+      }
+    }
+
+    if (account === undefined || !account.ok)
+      account = {
+        ok: false,
+        reason
+      }
+
+    return account;
+  }
+
+  /**
+   * Gets account current state
+   * 
+   * @throws {Error}
+   * @returns {Promise&lt;Account>}
+   */
+  async getAccount() {
+    if (!this.address) throw Error('no account address');
+
+    const a = await this._getAccount();
+    if (!a.ok) throw Error('Cannot get account state: ' + a.reason);
+
+    // convert
+    return await this._convertAccount(a);
+  }
+
+  /**
+   * Gets account current state (without throw)
+   * 
+   * @returns {Promise&lt;{ok:boolean, reason:(string|undefined), account:(Account|undefined)}>}
+   */
+  async getAccountNoThrow() {
+    try {
+      const account = await this.getAccount();
+      return {
+        ok: true,
+        account
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        reason: e.toString()
+      }
+    }
+  }
+
+  getAddress() {
+    return this.address;
+  }
+
+  /**
+   * Converts from raw account to account
+   * 
+   * @private
+   */
+  async _convertAccount(account) {
+    let _account = {};
+    _account.raw = account.account;
+
+    if (account.account.type === 'none') {
+      _account.type = AccountType.none;
+      return _account;
+    }
+    if (account.account.storage.state.state === 'uninit')
+      _account.type = AccountType.uninit;
+    else if (account.account.storage.state.state === 'active')
+      _account.type = AccountType.active;
+    else if (account.account.storage.state.state === 'frozen')
+      _account.type = AccountType.frozen;
+    else
+      throw Error('Unknown account state');
+
+    if (_account.type === AccountType.active) {
+      const codeCell = account.account.storage.state.code;
+      const dataCell = account.account.storage.state.data;
+
+      _account.code = bytesToBase64(await codeCell.toBoc(false, false, false));
+      _account.data = bytesToBase64(await dataCell.toBoc(false, false, false));
+    } else if (_account.type === AccountType.frozen) {
+      _account.state_hash = account.account.storage.state.state_hash;
+    }
+    _account.balance = account.account.storage.balance.grams.amount.value;
+    _account.balance_other = undefined; // TODO
+    _account.address = Address.fromBytes(account.account.addr.workchain_id, account.account.addr.address);
+    _account.id = _account.address.toString(false);
+    _account.last_trans_id = {
+      lt: account.lastTransLt,
+      hash: account.lastTransHash
+    };
+    _account.last_paid = account.account.storage_stat.last_paid;
+
+    // TODO
+    //due_payment: account.account.storage_stat.due_payment,
+    //split_depth: account.account.storage.state.split_depth,
+    //tick: undefined,
+    //tock: undefined,
+    //library: account.account.storage.state.library,
+
+    return _account;
+  }
+
+
+  /**
+   * Converts body cell to base64 format
+   * 
+   * @private
+   * @param {BlockObject} body
+   * @param {boolean} incomplete
+   * @returns {string|undefined}
+   */
+  async _convertMessageBody(body, incomplete=false) {
+    if (body._ !== 'Any') throw Error('not a message body');
+
+    let refs = body.cell.refs.length - body.current_ref;
+    let len = body.cell.bits.cursor - body.current_pos;
+
+    if (len === 0)
+      return undefined;
+    
+    const bodyCell = new Cell();
+
+    if (incomplete)
+      bodyCell.bits.writeBit(false);
+    
+    for (let k = 0; k &lt; len; k++) {
+      bodyCell.bits.writeBit(body.cell.bits.get(body.current_pos + k));
+    }
+    for (let k = 0; k &lt; refs; k++) {
+      bodyCell.refs.push(body.cell.refs[body.current_ref + k]);
+    }
+
+    const msgBoc = bytesToBase64(await bodyCell.toBoc(false, false, false));
+
+    return msgBoc;
+  }
+
+  /**
+   * Converts message from Block format
+   * 
+   * @private
+   * @param {BlockObject} msg Message
+   * @param {boolean} incompleteBody 
+   * @returns {Message}
+   */
+  async _convertMessage(msg, incompleteBody=false) {
+    if (msg._ !== 'Message') throw Error('not a Message');
+
+    let _msg = {};
+    _msg.raw = msg;
+
+    _msg.hash = msg.hash;
+    _msg.id = bytesToHex(msg.hash);
+
+    if (msg.info.type === 'ext_in') {
+      _msg.type = MessageType.ext_in;
+      _msg.dst = Address.fromBytes(msg.info.dest.workchain_id, msg.info.dest.address);
+    }
+    else if (msg.info.type === 'ext_out') {
+      _msg.type = MessageType.ext_out;
+      _msg.src = Address.fromBytes(msg.info.src.workchain_id, msg.info.src.address);
+      _msg.created_lt = msg.info.created_lt;
+      _msg.created_at = msg.info.created_at;
+    }
+    else if (msg.info.type === 'int') {
+      _msg.type = MessageType.int;
+      _msg.bounce = msg.info.bounce;
+      _msg.bounced = msg.info.bounced;
+      _msg.src = Address.fromBytes(msg.info.src.workchain_id, msg.info.src.address);
+      _msg.dst = Address.fromBytes(msg.info.dest.workchain_id, msg.info.dest.address);
+      _msg.value = msg.info.value.grams.amount.value;
+      _msg.created_lt = msg.info.created_lt;
+      _msg.created_at = msg.info.created_at;
+    }
+
+    if (msg.init) {
+      const codeCell = msg.init.code;
+      const dataCell = msg.init.data;
+
+      _msg.code = bytesToBase64(await codeCell.toBoc(false, false, false));
+      _msg.data = bytesToBase64(await dataCell.toBoc(false, false, false));
+    }
+
+    _msg.body = msg.body ? await this._convertMessageBody(msg.body, incompleteBody) : undefined;
+
+    return _msg;
+  }
+
+
+  /**
+   * Converts account status
+   * 
+   * @private
+   * @throws {Error}
+   * @param {string} status
+   * @returns {AccountType}
+   */
+  _convertAccountStatus(status) {
+    switch(status) {
+      case "uninit": return AccountType.uninit;
+      case "frozen": return AccountType.frozen;
+      case "active": return AccountType.active;
+      case "nonexist": return AccountType.none;
+      default: throw Error('unknown status');
+    }
+  }
+
+  /**
+   * Converts from block transaction format
+   * 
+   * @private
+   * @param {BlockObject} trans Transaction to convert
+   * @param {BlockId} blockId 
+   */
+  async _convertTransaction(trans, blockId) {
+    if (trans._ !== 'Transaction') throw Error('not a transaction');
+
+    let _trans = {};
+    _trans.raw = trans;
+
+    _trans.block_id = blockId;
+    _trans.hash = trans.hash;
+    _trans.id = bytesToHex(trans.hash);
+
+    _trans.lt = trans.lt;
+    _trans.prev_trans_id = {
+      lt: trans.prev_trans_lt,
+      hash: trans.prev_trans_hash
+    };
+    _trans.now = trans.now;
+    _trans.total_fees = trans.total_fees.grams.amount.value;
+    _trans.orig_status = this._convertAccountStatus(trans.orig_status);
+    _trans.end_status = this._convertAccountStatus(trans.end_status);
+
+    _trans.in_msg = await this._convertMessage(trans.in_msg, false);
+
+    _trans.out_msgs = [];
+    for (const entry of trans.out_msgs.map.entries()) {
+      const msg = await this._convertMessage(entry[1], false);
+      _trans.out_msgs.push(msg);
+    }
+
+    if (trans.description.type === 'ord') {
+      _trans.type = TransactionType.ord;
+      _trans.aborted = trans.description.aborted;
+      _trans.destroyed = trans.description.destroyed;
+    } else if (trans.description.type === 'storage') {
+      _trans.type = TransactionType.storage;
+    } else if (trans.description.type === 'tick_tock') {
+      _trans.type = TransactionType.tick_tock;
+      _trans.aborted = trans.description.aborted;
+      _trans.destroyed = trans.description.destroyed;
+    } else {
+      throw Error('unknown transaction type');
+    }
+
+    _trans.old_hash = trans.state_update.old_hash;
+    _trans.new_hash = trans.state_update.new_hash;
+
+    _trans.workchain_id = blockId.workchain;
+    _trans.account_addr = Address.fromBytes(blockId.workchain, trans.account_addr);
+    _trans.account_id = _trans.account_addr.toString(false);
+
+    return _trans;
+  }
+  
+  /**
+   * Converts account to internal format (for tvm)
+   * 
+   * @private
+   * @param {Account} account
+   * @returns {Object}
+   */
+  _convertAccountToInternal(account) {
+
+    if (account.type === AccountType.none)
+      throw Error('Account not exist');
+
+    const _account = {
+      acc_type: account.type,
+      code: account.code,
+      data: account.data,
+      balance: account.balance ? '0x' + account.balance.toString(16) : undefined,
+      balance_other: account.balance_other,
+      id: account.id,
+      last_trans_lt: account.last_trans_id.lt ? '0x' + account.last_trans_id.lt.toString(16) : undefined,
+      last_paid: account.last_paid
+    };
+
+    return _account;
+  }
+
+  /**
+   * Converts account from internal format
+   * 
+   * @private
+   * @param {Object} account 
+   * @returns {Account}
+   */
+  _convertAccountFromInternal(account) {
+
+    const _account = {
+      type: account.acc_type,
+      code: account.code,
+      data: account.data,
+      balance: new BN(account.balance.replace('0x', ''), 16),
+      balance_other: undefined, // TODO
+      id: account.id,
+      address: new Address(account.id),
+      last_trans_id: undefined,
+      last_paid: account.last_paid
+    };
+    return _account;
+
+  }
+
+ /**
+  * Estimates fees
+  * 
+  * @private
+  * @throws {Error}
+  * @param {{account:Account,address:Address, messageBodyBase64:string, emulateBalance:boolean}} params 
+  * @returns {Promise&lt;Fees>}
+  */
+  async _estimateFee(params) {
+    let account;
+
+    if (params.account)
+      account = this._convertAccountToInternal(params.account);
+    else
+      account = {
+        id: params.address.toString(false)
+      };
+
+    if (account.last_paid === undefined)
+      account.last_paid = Math.floor(Date.now() / 1000);
+
+    if (account.balance === undefined || params.emulateBalance)
+      account.balance = this.bigBalance;
+
+    let res = (await this.client.requestCore('contracts.run.fee.msg', {
+      address: params.address.toString(false),
+      account,
+      messageBase64: params.messageBodyBase64,
+    })).fees;
+
+    return {
+      gasFee: new BN(res.gasFee.replace('0x', ''), 16),
+      inMsgFwdFee: new BN(res.inMsgFwdFee.replace('0x', ''), 16),
+      outMsgsFwdFee: new BN(res.outMsgsFwdFee.replace('0x', ''), 16),
+      storageFee: new BN(res.storageFee.replace('0x', ''), 16),
+      totalAccountFees: new BN(res.totalAccountFees.replace('0x', ''), 16),
+      totalOutput: new BN(res.totalOutput.replace('0x', ''), 16)
+    };
+  }
+
+  /**
+   * Runs message in TVM
+   * 
+   * @private
+   * @throw {Error}
+   * @param {{account:Account, address:Address, emulateBalance:boolean, functionName:string, abi:Object, messageBodyBase64:string, fullRun:boolean}} params 
+   * @returns {{account:Account, output:Object, fee:Fees}}
+   */
+  async _runMessageLocal(params) {
+    let account;
+
+    if (params.account)
+      account = this._convertAccountToInternal(params.account);
+    else
+      account = {
+        id: params.address.toString(false)
+      };
+
+    if (account.last_paid === undefined)
+      account.last_paid = Math.floor(Date.now() / 1000);
+
+    if (account.balance === undefined || params.emulateBalance)
+      account.balance = this.bigBalance;
+
+    if (!params.functionName || !params.abi) {
+      params.abi = {
+        "ABI version": 2,
+        "header": [],
+        "functions": [
+          {
+          "name": "dummy",
+          "inputs": [],
+          "outputs": []
+          }
+        ],
+        "data": [],
+        "events": []
+      };
+      params.functionName = 'dummy';
+    }
+
+    let res = await this.client.requestCore('contracts.run.local.msg', {
+        address: params.address.toString(false),
+        account,
+        abi: params.abi,
+        functionName: params.functionName,
+        messageBase64: params.messageBodyBase64,
+        fullRun: params.fullRun
+    });
+    return {
+      account: res.account ? this._convertAccountFromInternal(res.account) : undefined,
+      output: res.output,
+      fee: res.fee ? {
+        gasFee: new BN(res.fee.gasFee.replace('0x', ''), 16),
+        inMsgFwdFee: new BN(res.fee.inMsgFwdFee.replace('0x', ''), 16),
+        outMsgsFwdFee: new BN(res.fee.outMsgsFwdFee.replace('0x', ''), 16),
+        storageFee: new BN(res.fee.storageFee.replace('0x', ''), 16),
+        totalAccountFees: new BN(res.fee.totalAccountFees.replace('0x', ''), 16),
+        totalOutput: new BN(res.fee.totalOutput.replace('0x', ''), 16)
+      } : undefined
+    };
+  }
+
+  /**
+   * Runs ABI get method
+   * 
+   * @private
+   * @todo Output conversion
+   * @throws {Error}
+   * @param {Account} account 
+   * @param {string} functionName 
+   * @param {Object} input 
+   */
+  async _runGet(account, functionName, input) {
+
+    let acc = this._convertAccountToInternal(account);
+
+    let result = await this.client.runGet({
+      codeBase64: acc.code,
+      dataBase64: acc.data,
+      input: input,
+      functionName: functionName
+    });
+    
+    return result;
+  }
+
+  /**
+   * Checks message hash
+   * 
+   * @param {Message} message Sended message
+   * @param {BlockObject} inMsg Inblund message in transaction
+   * @returns {boolean} 
+   */
+  _checkMessageHash(message, inMsg) {
+    if (inMsg._ !== 'Message')
+      return false;
+
+    return message.hash === bytesToHex(inMsg.hash); //TODO ???
+  }
+
+  /**
+   * Runs message
+   * 
+   * @private
+   * @param {MessageInfo} message Message to send
+   * @param {string} accountPreState Expected state of account before message send ('uninit', 'active', 'frozen')
+   * @param {Number} totalTimeout Timeout time (UTC time in seconds), 0 - send message, but do not wait for confirmation
+   * @param {Function} checkMessageFunc Function for check message equivalence
+   * @param {Function} saveMessageFunc Function for save message before send to network
+   * @returns {Promise&lt;{ok:boolean, sended:boolean, confirmed:boolean}>} ok - is message was successfully transacted, sended - is message was sended to network, confirmed - is message status was confirmed
+   */
+  async _runMessage(message, accountPreState, totalTimeout, checkMessageFunc, saveMessageFunc) {
+    
+    // ===! 1 stage - get current account state
+
+    let accountPre;
+    try {
+      accountPre = await this._getAccount();
+      if (!accountPre.ok) {
+        return {
+          ok: false,
+          sended: false,
+          reason: 'Cannot get account state: ' + accountPre.reason
+        };
+      }
+      if (accountPre.account.type === 'none') {
+        return {
+          ok: false,
+          sended: false,
+          reason: 'Account does not exist'
+        };
+      }
+      if(accountPreState !== undefined &amp;&amp;
+        accountPre.account.storage.state.state !== accountPreState) {
+        return {
+          ok: false,
+          sended: false,
+          reason: 'Invalid initial account state "' + accountPre.account.storage.state.state + '"" expected "' + accountPreState +'"'
+        };
+      }
+    } catch (e) {
+      return {
+          ok: false,
+          sended: false,
+          reason: 'Cannot get account state: ' + e.toString()
+        };
+    }
+
+    let currentLastTransLt = accountPre.lastTransLt;
+    let currentLastTransHash = accountPre.lastTransHash;
+    let currentShardBlockUtime = accountPre.blockHeader.info.gen_utime;
+
+    // ===! 2 stage - save message with latest lt &amp; hash
+
+    if (saveMessageFunc) {
+      try {
+        await saveMessageFunc(message, currentLastTransLt, currentLastTransHash);
+      } catch (e) {
+        return {
+          ok: false,
+          sended: false,
+          reason: 'Message not saved: ' + e.toString(),
+          account: accountPre
+        };
+      }
+    }
+
+    // ===! 3 stage - final checks before send
+
+    let now = Math.floor(Date.now() / 1000);
+
+    if (message.expire !== undefined &amp;&amp; (now > message.expire || currentShardBlockUtime >= message.expire)) {
+      return {
+        ok: false,
+        sended: false,
+        reason: 'Message already expired',
+        account: accountPre
+      };
+    }
+
+    // ===! 4 stage - send message to network
+
+    let sendRes = await this.sendMessage(message);
+    if (!sendRes.ok)
+      console.warn('Message send is not ok, but we must wait for message expiration before new try');
+
+    // ===! 5 stage - wait for transaction
+
+    let accountCurr;
+
+    let cycleTimeout;
+    if (message.expire === undefined &amp;&amp; totalTimeout === undefined)
+      cycleTimeout = Math.floor((Date.now()  + this.config.runTimeout) / 1000);
+
+    // eslint-disable-next-line no-constant-condition
+    while(true) {
+
+      now = Math.floor(Date.now() / 1000);
+
+      if ((cycleTimeout !== undefined &amp;&amp; now > cycleTimeout) ||
+          (totalTimeout !== undefined &amp;&amp; now > totalTimeout)) {
+        return {
+          ok: false,
+          sended: true,
+          confirmed: false,
+          reason: 'Timeout while waiting transaction confirmation',
+          lastTransLt: currentLastTransLt,
+          lastTransHash: currentLastTransHash,
+          lastShardUtime: currentShardBlockUtime,
+          account: accountCurr || accountPre
+        };
+      }
+
+      let accountLatest = await this._getAccount();
+      if (!accountLatest.ok || accountLatest.account.type === 'none') {
+        return {
+          ok: false,
+          sended: true,
+          confirmed: false,
+          reason: 'Cannot get account state or account doesnot exist: ' + accountLatest.reason,
+          lastTransLt: currentLastTransLt,
+          lastTransHash: currentLastTransHash,
+          lastShardUtime: currentShardBlockUtime,
+          account: accountCurr || accountPre
+        };
+      }
+
+      accountCurr = accountLatest;
+
+      if (!accountCurr.lastTransLt.eq(currentLastTransLt)) {
+
+        // there are new transactions, check them all
+
+        let pageLastTransLt = accountCurr.lastTransLt;
+        let pageLastTransHash = accountCurr.lastTransHash;
+        let transactionTryCount = this.config.queryTryCount;
+
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          let transRes = await this.block.getTransactions(10, this.address, pageLastTransLt, pageLastTransHash, currentLastTransLt);
+          if (!transRes.ok || transRes.transactionList.length === 0) {
+            transactionTryCount--;
+            if (transactionTryCount &lt;= 0) {
+              return {
+                ok: false,
+                sended: true,
+                confirmed: false,
+                reason: 'Cannot get transaction list',
+                lastTransLt: currentLastTransLt,
+                lastTransHash: currentLastTransHash,
+                lastShardUtime: currentShardBlockUtime,
+                account: accountCurr
+              };
+            }
+            continue;
+          }
+
+          transactionTryCount = this.config.queryTryCount;
+
+          // search for our message hash
+          for (let j = 0; j &lt; transRes.transactionList.length; j++) {
+            const transaction = transRes.transactionList[j];
+
+            //console.log('check transaction', transaction);
+            try {
+
+              if (transaction.in_msg.info.type !== 'ext_in') {
+                //console.log('transaction not external');
+                continue;
+              }
+
+              const signValid = checkMessageFunc !== undefined ?
+                                  checkMessageFunc(message, transaction.in_msg) :
+                                  this._checkMessageHash(message, transaction.in_msg);
+
+              if (signValid) {
+                return {
+                  ok: true,
+                  sended: true,
+                  confirmed: true,
+                  transaction: transaction,
+                  account: accountCurr
+                };
+              }
+            } catch (e) {
+              return {
+                ok: false,
+                sended: true,
+                confirmed: false,
+                reason: 'Error while processing transactions: ' + e.toString(),
+                lastTransLt: currentLastTransLt,
+                lastTransHash: currentLastTransHash,
+                lastShardUtime: currentShardBlockUtime,
+                account: accountCurr
+              };
+            }
+          }
+
+          pageLastTransLt = transRes.transactionList[transRes.transactionList.length-1].prev_trans_lt;
+          pageLastTransHash = transRes.transactionList[transRes.transactionList.length-1].prev_trans_hash;
+
+          if (pageLastTransLt.eq(currentLastTransLt)) {
+            if (!compareBytes(pageLastTransHash, currentLastTransHash)) {
+              return {
+                ok: false,
+                sended: true,
+                confirmed: false,
+                reason: 'Incorrect transaction hash: get ' + bytesToHex(pageLastTransHash) + ' expected ' + bytesToHex(currentLastTransHash),
+                lastTransLt: currentLastTransLt,
+                lastTransHash: currentLastTransHash,
+                lastShardUtime: currentShardBlockUtime,
+                account: accountCurr
+              };
+            }
+            break;
+
+
+          }
+        }
+      }
+
+      currentLastTransLt = accountCurr.lastTransLt;
+      currentLastTransHash = accountCurr.lastTransHash;
+      currentShardBlockUtime = accountCurr.blockHeader.info.gen_utime;
+
+      if (message.expire !== undefined &amp;&amp; currentShardBlockUtime > message.expire) {
+        return {
+          ok: false,
+          sended: true,
+          confirmed: true,
+          lastTransLt: currentLastTransLt,
+          lastTransHash: currentLastTransHash,
+          lastShardUtime: currentShardBlockUtime,
+          account: accountCurr
+        };
+      }
+
+      // TODO wait for next block
+      await (new Promise(resolve => setTimeout(resolve, 2000)));
+    }
+  }
+
+  /**
+   * Is message was transacted
+   * 
+   * @param {MessageInfo} message Message sended to network
+   * @param {BN} fromTransLt Last transaction logical time before message sended
+   * @param {Uint8Array} fromTransHash Last transaction hash before message sended
+   * @param {Function} checkMessageFunc Function for check message equivalence
+   * @returns {Promise&lt;{ok:boolean, confirmed:boolean, delivered:boolean}>} ok - is query was successfull, confirmed - is message final status was confirmed, delivered - is message was transacted
+   */
+  async checkMessageDelivery(message, fromTransLt, fromTransHash, checkMessageFunc) {
+
+    let accountCurr = await this._getAccount();
+    if (!accountCurr.ok || accountCurr.account.type === 'none') {
+      return {
+        ok: false,
+        reason: 'Cannot get account state or account does not exist: ' + accountCurr.reason
+      };
+    }
+
+    if (!accountCurr.lastTransLt.eq(fromTransLt)) {
+
+      // there are new transactions, check them all
+
+      let pageLastTransLt = accountCurr.lastTransLt;
+      let pageLastTransHash = accountCurr.lastTransHash;
+      let transactionTryCount = this.config.queryTryCount;
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        let transRes = await this.block.getTransactions(10, this.address, pageLastTransLt, pageLastTransHash, fromTransLt);
+        if (!transRes.ok || transRes.transactionList.length === 0) {
+          transactionTryCount--;
+          if (transactionTryCount &lt;= 0) {
+            return {
+              ok: false,
+              reason: 'Cannot get transaction list',
+              account: accountCurr
+            };
+          }
+          continue;
+        }
+
+        transactionTryCount = this.config.queryTryCount;
+
+        // search for our message hash
+        for (let j = 0; j &lt; transRes.transactionList.length; j++) {
+          const transaction = transRes.transactionList[j];
+
+          //console.log('check transaction', transaction);
+          try {
+
+            if (transaction.in_msg.info.type !== 'ext_in') {
+              //console.log('transaction not external');
+              continue;
+            }
+
+            const signValid = checkMessageFunc !== undefined ?
+                                checkMessageFunc(message, transaction.in_msg) :
+                                this._checkMessageHash(message, transaction.in_msg);
+
+            if (signValid) {
+              return {
+                ok: true,
+                delivered: true,
+                confirmed: true,
+                transaction: transaction,
+                account: accountCurr
+              };
+            }
+          } catch (e) {
+            return {
+              ok: false,
+              reason: 'Error while processing transactions: ' + e.toString(),
+              account: accountCurr
+            };
+          }
+        }
+
+        pageLastTransLt = transRes.transactionList[transRes.transactionList.length-1].prev_trans_lt;
+        pageLastTransHash = transRes.transactionList[transRes.transactionList.length-1].prev_trans_hash;
+
+        if (pageLastTransLt.eq(fromTransLt)) {
+          if (!compareBytes(pageLastTransHash, fromTransHash)) {
+            return {
+              ok: false,
+              sended: true,
+              confirmed: false,
+              reason: 'Incorrect transaction hash: get ' + bytesToHex(pageLastTransHash) + ' expected ' + bytesToHex(currentLastTransHash),
+              lastTransLt: currentLastTransLt,
+              lastTransHash: currentLastTransHash,
+              lastShardUtime: currentShardBlockUtime,
+              account: accountCurr
+            };
+          }
+          break;
+        }
+      }
+    }
+
+    let currentLastTransLt = accountCurr.lastTransLt;
+    let currentLastTransHash = accountCurr.lastTransHash;
+    let currentShardBlockUtime = accountCurr.blockHeader.info.gen_utime;
+
+    if (message.expire !== undefined &amp;&amp; currentShardBlockUtime > message.expire) {
+      return {
+        ok: true,
+        delivered: false,
+        confirmed: true,
+        lastTransLt: currentLastTransLt,
+        lastTransHash: currentLastTransHash,
+        lastShardUtime: currentShardBlockUtime,
+        account: accountCurr
+      };
+    }
+
+    return {
+      ok: true,
+      delivered: false,
+      confirmed: false,
+      lastTransLt: currentLastTransLt,
+      lastTransHash: currentLastTransHash,
+      lastShardUtime: currentShardBlockUtime,
+      account: accountCurr
+    };
+  }
+
+  /**
+   * Get payload gell from string
+   * 
+   * @param {string} payload 
+   * @returns {Promise&lt;string>} Payload BOC in base64 format
+   */
+  async getPayloadFromString(payload) {
+    const payloadCell = new Cell();
+
+    if (typeof payload === 'string') {
+      if (payload.length > 0) {
+        if (payload.length > 250)
+          payload = payload.substring(0, 250);
+        payloadCell.bits.writeUint(0, 32);
+        payloadCell.bits.writeBytes(stringToBytes(payload));
+      }
+    }
+
+    return bytesToBase64(await payloadCell.toBoc(false, false, false));
+  }
+
+  /**
+   * Gets string from payload
+   * 
+   * @param {string} payloadBase64 Payload BOC in base64 format
+   * @returns {Promise&lt;string>} String from payload 
+   */
+  async getStringFromPayload(payloadBase64) {
+    const payloadCell = await Cell.fromBoc(base64ToBytes(payloadBase64));
+
+    if (payloadCell.bits.cursor &lt; 32)
+      return;
+
+    const h = payloadCell.bits.readUint32(0);
+    if (h === 0) {
+      if (payloadCell.bits.cursor &lt; 40)
+        return "";
+
+      const strBytes = payloadCell.bits.getRange(32, payloadCell.bits.cursor - 32);
+      return bytesToString(strBytes);
+    }
+  }
+
+}
+
+
+module.exports = {Contract};</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbiContract.html">AbiContract</a></li><li><a href="Address.html">Address</a></li><li><a href="BitString.html">BitString</a></li><li><a href="Block.html">Block</a></li><li><a href="BlockId.html">BlockId</a></li><li><a href="BlockParser.html">BlockParser</a></li><li><a href="BrowserStorage.html">BrowserStorage</a></li><li><a href="Cell.html">Cell</a></li><li><a href="ClassicContract.html">ClassicContract</a></li><li><a href="Contract.html">Contract</a></li><li><a href="Hashmap.html">Hashmap</a></li><li><a href="HashmapAug.html">HashmapAug</a></li><li><a href="HashmapAugE.html">HashmapAugE</a></li><li><a href="HashmapE.html">HashmapE</a></li><li><a href="LiteClient.html">LiteClient</a></li><li><a href="Storage.html">Storage</a></li></ul><h3>Global</h3><ul><li><a href="global.html#base64ToBytes">base64ToBytes</a></li><li><a href="global.html#base64toString">base64toString</a></li><li><a href="global.html#bytesToBase64">bytesToBase64</a></li><li><a href="global.html#bytesToBinString">bytesToBinString</a></li><li><a href="global.html#bytesToHex">bytesToHex</a></li><li><a href="global.html#bytesToString">bytesToString</a></li><li><a href="global.html#compareBytes">compareBytes</a></li><li><a href="global.html#concatBytes">concatBytes</a></li><li><a href="global.html#crc16">crc16</a></li><li><a href="global.html#crc32c">crc32c</a></li><li><a href="global.html#estimateFee">estimateFee</a></li><li><a href="global.html#fromNano">fromNano</a></li><li><a href="global.html#getAddress">getAddress</a></li><li><a href="global.html#getMessage">getMessage</a></li><li><a href="global.html#hexToBytes">hexToBytes</a></li><li><a href="global.html#loadAccount">loadAccount</a></li><li><a href="global.html#loadAccountBlock">loadAccountBlock</a></li><li><a href="global.html#loadAccountState">loadAccountState</a></li><li><a href="global.html#loadAccountStatus">loadAccountStatus</a></li><li><a href="global.html#loadAccountStorage">loadAccountStorage</a></li><li><a href="global.html#loadAccStatusChange">loadAccStatusChange</a></li><li><a href="global.html#loadAny">loadAny</a></li><li><a href="global.html#loadAnycast">loadAnycast</a></li><li><a href="global.html#loadBinTree">loadBinTree</a></li><li><a href="global.html#loadBit">loadBit</a></li><li><a href="global.html#loadBits">loadBits</a></li><li><a href="global.html#loadBlkMasterInfo">loadBlkMasterInfo</a></li><li><a href="global.html#loadBlkPrevInfo">loadBlkPrevInfo</a></li><li><a href="global.html#loadBlock">loadBlock</a></li><li><a href="global.html#loadBlockCreateFees">loadBlockCreateFees</a></li><li><a href="global.html#loadBlockCreateStats">loadBlockCreateStats</a></li><li><a href="global.html#loadBlockExtra">loadBlockExtra</a></li><li><a href="global.html#loadBlockIdExt">loadBlockIdExt</a></li><li><a href="global.html#loadBlockInfo">loadBlockInfo</a></li><li><a href="global.html#loadBlockLimits">loadBlockLimits</a></li><li><a href="global.html#loadBool">loadBool</a></li><li><a href="global.html#loadCatchainConfig">loadCatchainConfig</a></li><li><a href="global.html#loadCommonMsgInfo">loadCommonMsgInfo</a></li><li><a href="global.html#loadComplaintPricing">loadComplaintPricing</a></li><li><a href="global.html#loadComputeSkipReason">loadComputeSkipReason</a></li><li><a href="global.html#loadConfigParam">loadConfigParam</a></li><li><a href="global.html#loadConfigParam0">loadConfigParam0</a></li><li><a href="global.html#loadConfigParam1">loadConfigParam1</a></li><li><a href="global.html#loadConfigParam2">loadConfigParam2</a></li><li><a href="global.html#loadConfigParam3">loadConfigParam3</a></li><li><a href="global.html#loadConfigParam4">loadConfigParam4</a></li><li><a href="global.html#loadConfigParam6">loadConfigParam6</a></li><li><a href="global.html#loadConfigParam7">loadConfigParam7</a></li><li><a href="global.html#loadConfigParam8">loadConfigParam8</a></li><li><a href="global.html#loadConfigParam9">loadConfigParam9</a></li><li><a href="global.html#loadConfigParam10">loadConfigParam10</a></li><li><a href="global.html#loadConfigParam11">loadConfigParam11</a></li><li><a href="global.html#loadConfigParam12">loadConfigParam12</a></li><li><a href="global.html#loadConfigParam13">loadConfigParam13</a></li><li><a href="global.html#loadConfigParam14">loadConfigParam14</a></li><li><a href="global.html#loadConfigParam15">loadConfigParam15</a></li><li><a href="global.html#loadConfigParam16">loadConfigParam16</a></li><li><a href="global.html#loadConfigParam17">loadConfigParam17</a></li><li><a href="global.html#loadConfigParam18">loadConfigParam18</a></li><li><a href="global.html#loadConfigParam20">loadConfigParam20</a></li><li><a href="global.html#loadConfigParam21">loadConfigParam21</a></li><li><a href="global.html#loadConfigParam22">loadConfigParam22</a></li><li><a href="global.html#loadConfigParam23">loadConfigParam23</a></li><li><a href="global.html#loadConfigParam24">loadConfigParam24</a></li><li><a href="global.html#loadConfigParam25">loadConfigParam25</a></li><li><a href="global.html#loadConfigParam28">loadConfigParam28</a></li><li><a href="global.html#loadConfigParam29">loadConfigParam29</a></li><li><a href="global.html#loadConfigParam31">loadConfigParam31</a></li><li><a href="global.html#loadConfigParam32">loadConfigParam32</a></li><li><a href="global.html#loadConfigParam33">loadConfigParam33</a></li><li><a href="global.html#loadConfigParam34">loadConfigParam34</a></li><li><a href="global.html#loadConfigParam35">loadConfigParam35</a></li><li><a href="global.html#loadConfigParam36">loadConfigParam36</a></li><li><a href="global.html#loadConfigParam37">loadConfigParam37</a></li><li><a href="global.html#loadConfigParams">loadConfigParams</a></li><li><a href="global.html#loadConfigProposalSetup">loadConfigProposalSetup</a></li><li><a href="global.html#loadConfigVotingSetup">loadConfigVotingSetup</a></li><li><a href="global.html#loadConsensusConfig">loadConsensusConfig</a></li><li><a href="global.html#loadCounters">loadCounters</a></li><li><a href="global.html#loadCreatorStats">loadCreatorStats</a></li><li><a href="global.html#loadCryptoSignature">loadCryptoSignature</a></li><li><a href="global.html#loadCryptoSignaturePair">loadCryptoSignaturePair</a></li><li><a href="global.html#loadCurrencyCollection">loadCurrencyCollection</a></li><li><a href="global.html#loadDepthBalanceInfo">loadDepthBalanceInfo</a></li><li><a href="global.html#loadEither">loadEither</a></li><li><a href="global.html#loadExtBlkRef">loadExtBlkRef</a></li><li><a href="global.html#loadExtraCurrencyCollection">loadExtraCurrencyCollection</a></li><li><a href="global.html#loadFutureSplitMerge">loadFutureSplitMerge</a></li><li><a href="global.html#loadGasLimitsPrices">loadGasLimitsPrices</a></li><li><a href="global.html#loadGlobalVersion">loadGlobalVersion</a></li><li><a href="global.html#loadGrams">loadGrams</a></li><li><a href="global.html#loadHASH_UPDATE">loadHASH_UPDATE</a></li><li><a href="global.html#loadHashmap">loadHashmap</a></li><li><a href="global.html#loadHashmapAug">loadHashmapAug</a></li><li><a href="global.html#loadHashmapAugE">loadHashmapAugE</a></li><li><a href="global.html#loadHashmapE">loadHashmapE</a></li><li><a href="global.html#loadInt8">loadInt8</a></li><li><a href="global.html#loadInt16">loadInt16</a></li><li><a href="global.html#loadInt32">loadInt32</a></li><li><a href="global.html#loadKeyExtBlkRef">loadKeyExtBlkRef</a></li><li><a href="global.html#loadKeyMaxLt">loadKeyMaxLt</a></li><li><a href="global.html#loadMaybe">loadMaybe</a></li><li><a href="global.html#loadMaybeRef">loadMaybeRef</a></li><li><a href="global.html#loadMcBlockExtra">loadMcBlockExtra</a></li><li><a href="global.html#loadMcStateExtra">loadMcStateExtra</a></li><li><a href="global.html#loadMERKLE_UPDATE">loadMERKLE_UPDATE</a></li><li><a href="global.html#loadMessage">loadMessage</a></li><li><a href="global.html#loadMsgAddressExt">loadMsgAddressExt</a></li><li><a href="global.html#loadMsgAddressInt">loadMsgAddressInt</a></li><li><a href="global.html#loadMsgForwardPrices">loadMsgForwardPrices</a></li><li><a href="global.html#loadOldMcBlocksInfo">loadOldMcBlocksInfo</a></li><li><a href="global.html#loadParamLimits">loadParamLimits</a></li><li><a href="global.html#loadRefIfExist">loadRefIfExist</a></li><li><a href="global.html#loadShardAccount">loadShardAccount</a></li><li><a href="global.html#loadShardAccountBlocks">loadShardAccountBlocks</a></li><li><a href="global.html#loadShardAccounts">loadShardAccounts</a></li><li><a href="global.html#loadShardDescr">loadShardDescr</a></li><li><a href="global.html#loadShardFeeCreated">loadShardFeeCreated</a></li><li><a href="global.html#loadShardFees">loadShardFees</a></li><li><a href="global.html#loadShardHashes">loadShardHashes</a></li><li><a href="global.html#loadShardIdent">loadShardIdent</a></li><li><a href="global.html#loadShardStateUnsplit">loadShardStateUnsplit</a></li><li><a href="global.html#loadSigPubKey">loadSigPubKey</a></li><li><a href="global.html#loadStateInit">loadStateInit</a></li><li><a href="global.html#loadStorageInfo">loadStorageInfo</a></li><li><a href="global.html#loadStoragePrices">loadStoragePrices</a></li><li><a href="global.html#loadStorageUsed">loadStorageUsed</a></li><li><a href="global.html#loadStorageUsedShort">loadStorageUsedShort</a></li><li><a href="global.html#loadTickTock">loadTickTock</a></li><li><a href="global.html#loadTrActionPhase">loadTrActionPhase</a></li><li><a href="global.html#loadTransaction">loadTransaction</a></li><li><a href="global.html#loadTransactionDescr">loadTransactionDescr</a></li><li><a href="global.html#loadTrBouncePhase">loadTrBouncePhase</a></li><li><a href="global.html#loadTrComputePhase">loadTrComputePhase</a></li><li><a href="global.html#loadTrCreditPhase">loadTrCreditPhase</a></li><li><a href="global.html#loadTrStoragePhase">loadTrStoragePhase</a></li><li><a href="global.html#loadUint">loadUint</a></li><li><a href="global.html#loadUint8">loadUint8</a></li><li><a href="global.html#loadUint16">loadUint16</a></li><li><a href="global.html#loadUint32">loadUint32</a></li><li><a href="global.html#loadUint64">loadUint64</a></li><li><a href="global.html#loadUintLeq">loadUintLeq</a></li><li><a href="global.html#loadUintLess">loadUintLess</a></li><li><a href="global.html#loadValidatorDescr">loadValidatorDescr</a></li><li><a href="global.html#loadValidatorInfo">loadValidatorInfo</a></li><li><a href="global.html#loadValidatorSet">loadValidatorSet</a></li><li><a href="global.html#loadValueFlow">loadValueFlow</a></li><li><a href="global.html#loadVarUInteger">loadVarUInteger</a></li><li><a href="global.html#loadWorkchainDescr">loadWorkchainDescr</a></li><li><a href="global.html#loadWorkchainFormat1">loadWorkchainFormat1</a></li><li><a href="global.html#readNBytesUIntFromArray">readNBytesUIntFromArray</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runLocal">runLocal</a></li><li><a href="global.html#sha256">sha256</a></li><li><a href="global.html#sha512">sha512</a></li><li><a href="global.html#stringToArray">stringToArray</a></li><li><a href="global.html#stringToBase64">stringToBase64</a></li><li><a href="global.html#stringToBytes">stringToBytes</a></li><li><a href="global.html#toNano">toNano</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.5</a> on Tue Sep 01 2020 21:46:48 GMT+0300 (Moscow Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

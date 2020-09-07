@@ -1,11 +1,14 @@
 {
-  "name": "tonweb",
-  "version": "0.0.9",
-  "description": "TonWeb - JavaScript API for TON (Telegram Open Network)",
+  "name": "ton-rocks-js",
+  "version": "0.1.0",
+  "description": "Ton Rocks JS - JavaScript API for TON (Telegram Open Network)",
   "main": "src/index.js",
   "scripts": {
-    "test": "webpack-dev-server",
-    "build": "npx webpack --mode=none"
+    "install": "cd src/tvm && cd browser && node install.js && node postinstall.js && cd ../nodejs && node install.js && node postinstall.js",
+    "test": "webpack-dev-server --config webpack.dev.js",
+    "build": "webpack --config webpack.prod.js",
+    "lint": "eslint ./src",
+    "doc": "jsdoc ./src/* -d ./docs"
   },
   "keywords": [
     "TON",
@@ -14,6 +17,11 @@
     "API"
   ],
   "authors": [
+    {
+      "name": "Battlelore21",
+      "email": "Battlelore21@protonmail.com",
+      "url": "https://github.com/Battlelore21"
+    },
     {
       "name": "Emelyanenko Kirill",
       "email": "emelyanenko.kirill@gmail.com",
@@ -27,23 +35,28 @@
   ],
   "license": "GPL-3.0",
   "bugs": {
-    "url": "https://github.com/toncenter/tonweb/issues"
+    "url": "https://github.com/ton-rocks/ton-rocks-js/issues"
   },
-  "homepage": "https://github.com/toncenter/tonweb#readme",
-  "repository": "https://github.com/toncenter/tonweb",
+  "homepage": "https://github.com/ton-rocks/ton-rocks-js#readme",
+  "repository": "https://github.com/ton-rocks/ton-rocks-js",
   "dependencies": {
     "bip39": "^3.0.2",
     "bn.js": "^5.1.1",
     "ethjs-unit": "^0.1.6",
+    "madeline-ton": "https://github.com/ton-rocks/madelineTon.js",
     "tweetnacl": "^1.0.3",
     "xmlhttprequest": "^1.8.0"
   },
   "devDependencies": {
+    "copy-webpack-plugin": "^5.1.1",
+    "eslint": "^7.7.0",
     "webpack": "^4.42.1",
     "webpack-cli": "^3.3.12",
-    "webpack-dev-server": "^3.11.0"
+    "webpack-dev-server": "^3.11.0",
+    "webpack-merge": "^5.0.9"
   },
   "browser": {
+    "./src/tvm/nodejs/TvmClient.js": "./src/tvm/browser/TvmClient.js",
     "crypto": false,
     "xmlhttprequest": false
   }

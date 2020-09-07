@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: contract/ClassicContract.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: contract/ClassicContract.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const {Cell, Address} = require("../types");
+const {bytesToBase64, bytesToHex, nacl} = require("../utils");
+const {BlockParser} = require('../blockchain/BlockParser');
+const {Contract} = require('./Contract');
+
+class ClassicContract extends Contract {
+    /**
+     * @param {{code:(Uint8Array|undefined), address:(Address|undefined), wc:(number|undefined), keys:(Object|undefined), signCallback:(Function|undefined)} options
+     * @param {Object} provider 
+     * @param {Object} storage 
+     * @param {Object} client 
+     * @param {Object} config
+     */
+    constructor(options, provider, storage, client, config) {
+        super(provider, storage, client, config);
+        this.options = options;
+        this.address = options.address ? new Address(options.address) : null;
+        if (!options.wc) options.wc = this.address ? this.address.wc : 0; // TODO wc
+        this.methods = {};
+
+        this.keys = options.keys;
+        this.signCallback = options.signCallback;
+
+        /**
+         * @param secretKey {Uint8Array}
+         */
+        this.deploy = async (params = {}) => {
+            if (!this.keys.publicKey) throw Error('no public key');
+            params.wc = params.wc !== undefined ? params.wc : 0;
+            this.options.wc = this.address ? this.address.wc : params.wc;
+
+            if (!this.address) {
+                const address = await this._getAddress();
+                this.address = new Address(address);
+            }
+
+            const getDeployMessage = async () => {
+                const query = await this.createInitExternalMessage();
+                const res = {
+                    messageBodyBase64: bytesToBase64(await query.message.toBoc(false)),
+                    sign: query.sign,
+                    signed: query.signed,
+                    hash: query.hash
+                }
+                return res;
+            }
+
+            return {
+                /*
+                */
+                getMessage: async () => {
+                  return await getDeployMessage();
+                },
+                /*
+                */
+                getAddress: () => {
+                  return this.address;
+                },
+                /*
+                */
+                estimateFee: async () => {
+                  let msg = await getDeployMessage();
+                  return await this._estimateFee({
+                    messageBodyBase64: msg.messageBodyBase64,
+                    address: this.address,
+                    emulateBalance: true
+                  });
+                },
+                /*
+                tryNum
+                totalTimeout (UTC time in seconds)
+                */
+                run: async (p = {}) => {
+                  let res;
+                  let tryNum = p.tryNum || 3;
+                  for (let t = 0; t &lt; tryNum; t++) {
+                    let msg = await getDeployMessage();
+                    res = await this._runMessage(msg, 'uninit', p.totalTimeout, this._checkStandartMessage);
+                    //console.log('run try', t, ': ', res);
+                    if (res.ok) {
+                      return res;
+                    }
+                    if (!res.sended)
+                      continue;
+                    if (!res.confirmed)
+                      return res;
+                  }
+                  return res;
+                },
+            }
+        }
+    }
+
+    /**
+     * @return {Promise&lt;Address>}
+     */
+    async _getAddress() {
+        return (await this.createStateInit()).address;
+    }
+
+    async _runGetMethod(functionName, p={}) {
+        let account;
+        if (!p.account) {
+          account = await this._getAccount();
+          if (!account.ok) throw Error('Cannot get account state: ' + account.reason);
+          account = await this._convertAccount(account);
+        } else {
+          account = p.account;
+        }
+        return await this._runGet(account, functionName, p.input);
+    }
+
+    /**
+     * @private
+     * @return {Cell} cell contains wallet code
+     */
+    createCodeCell() {
+        if (!this.options.code) throw new Error('Contract: options.code is not defined')
+        const cell = new Cell();
+        cell.bits.writeBytes(this.options.code);
+        return cell;
+    }
+
+    /**
+     * Method to override
+     * @protected
+     * @return {Cell} cell contains wallet data
+     */
+    createDataCell() {
+        return new Cell();
+    }
+
+    /**
+     * Method to override
+     * @protected
+     * @param  options?
+     * @return {Cell} cell contains message data
+     */
+    // eslint-disable-next-line no-unused-vars
+    createSigningMessage(options) {
+        return new Cell();
+    }
+
+    /**
+     * @private
+     * @return {{stateInit: Cell, address: Address, code: Cell, data: Cell}}
+     */
+    async createStateInit() {
+        const codeCell = this.createCodeCell();
+        const dataCell = this.createDataCell();
+        const stateInit = ClassicContract.createStateInit(codeCell, dataCell);
+        await stateInit.finalizeTree();
+        const stateInitHash = stateInit.getHash(0);
+        const address = new Address(this.options.wc + ":" + bytesToHex(stateInitHash));
+        return {
+            stateInit: stateInit,
+            address: address,
+            code: codeCell,
+            data: dataCell,
+        }
+    }
+
+    /**
+     * External message for initialization
+     * @param secretKey  {Uint8Array} nacl.KeyPair.secretKey
+     * @return {{address: Address, message: Cell, body: Cell, sateInit: Cell, code: Cell, data: Cell}}
+     */
+    async createInitExternalMessage() {
+
+        const signExist = !!this.signCallback || (this.keys &amp;&amp; this.keys.secretKey);
+        const externalSign = !!this.signCallback &amp;&amp; (!this.keys || !this.keys.secretKey);
+        if (!signExist) throw Error('no sign methods');
+
+        const {stateInit, address, code, data} = await this.createStateInit();
+
+        const signingMessage = this.createSigningMessage();
+        await signingMessage.finalizeTree();
+        const signingMessageHash = signingMessage.getHash(0);
+
+        let sign;
+        if (externalSign) {
+            sign = this.signCallback('deploy', signingMessageHash, this.address, this.keys);
+        }
+        else {
+            sign = nacl.sign.detached(signingMessageHash, this.keys.secretKey);
+        }
+
+        const body = new Cell();
+        body.bits.writeBytes(sign);
+        body.writeCell(signingMessage);
+
+        const header = ClassicContract.createExternalMessageHeader(address);
+        const externalMessage = ClassicContract.createMessage(header, stateInit, body);
+
+        //await externalMessage.finalizeTree();
+        //let messageHash = externalMessage.getHash(0);
+
+        return {
+            address: address,
+            message: externalMessage,
+            sign: bytesToHex(sign),
+            signed: true,
+
+            body,
+            signingMessage,
+            stateInit,
+            code,
+            data,
+        };
+    }
+
+
+    _checkStandartMessage(message, inMsg) {
+        if (inMsg._ !== 'Message')
+          return false;
+
+        if (!message.signed) {
+          return message.hash === bytesToHex(inMsg.hash);
+        }
+
+        if(!inMsg.body)
+          return false;
+
+        let signature = BlockParser.parseSignatureClassic(inMsg.body);
+        return message.sign === bytesToHex(signature);
+    }
+
+
+    // _ split_depth:(Maybe (## 5)) special:(Maybe TickTock)
+    // code:(Maybe ^Cell) data:(Maybe ^Cell)
+    // library:(Maybe ^Cell) = StateInit;
+    /**
+     * @param code  {Cell}
+     * @param data  {Cell}
+     * @param library {null}
+     * @param splitDepth {null}
+     * @param ticktock  {null}
+     * @return {Cell}
+     */
+    static createStateInit(code,
+                           data,
+                           library = null,
+                           splitDepth = null,
+                           ticktock = null) {
+        if (library)
+            throw "Library in state init is not implemented";
+        if (splitDepth)
+            throw "Split depth in state init is not implemented";
+        if (ticktock)
+            throw "Ticktock in state init is not implemented";
+
+        const stateInit = new Cell();
+
+        stateInit.bits.writeBitArray([Boolean(splitDepth), Boolean(ticktock), Boolean(code), Boolean(data), Boolean(library)]);
+        if (code)
+            stateInit.refs.push(code);
+        if (data)
+            stateInit.refs.push(data);
+        if (library)
+            stateInit.refs.push(library);
+        return stateInit;
+    }
+
+    // extra_currencies$_ dict:(HashmapE 32 (VarUInteger 32))
+    // = ExtraCurrencyCollection;
+    // currencies$_ grams:Grams other:ExtraCurrencyCollection
+    // = CurrencyCollection;
+
+    //int_msg_info$0 ihr_disabled:Bool bounce:Bool
+    //src:MsgAddressInt dest:MsgAddressInt
+    //value:CurrencyCollection ihr_fee:Grams fwd_fee:Grams
+    //created_lt:uint64 created_at:uint32 = CommonMsgInfo;
+    /**
+     * @param dest  {Address | string}
+     * @param gramValue  {number | BN}
+     * @param ihrDisabled  {boolean}
+     * @param bounce  {null | boolean}
+     * @param bounced {boolean}
+     * @param src  {Address | string}
+     * @param currencyCollection  {null}
+     * @param ihrFees  {number | BN}
+     * @param fwdFees  {number | BN}
+     * @param createdLt  {number | BN}
+     * @param createdAt  {number | BN}
+     * @return {Cell}
+     */
+    static createInternalMessageHeader(dest,
+                                       gramValue = 0,
+                                       ihrDisabled = true,
+                                       bounce = null,
+                                       bounced = false,
+                                       src = null,
+                                       currencyCollection = null,
+                                       ihrFees = 0,
+                                       fwdFees = 0,
+                                       createdLt = 0,
+                                       createdAt = 0) {
+        const message = new Cell();
+        message.bits.writeBit(false);
+        message.bits.writeBit(ihrDisabled);
+        if (!(bounce === null)) {
+            message.bits.writeBit(bounce);
+        } else {
+            message.bits.writeBit((new Address(dest)).isBounceable);
+        }
+        message.bits.writeBit(bounced);
+        message.bits.writeAddress(src ? new Address(src) : null);
+        message.bits.writeAddress(new Address(dest));
+        message.bits.writeGrams(gramValue);
+        if (currencyCollection) {
+            throw "Currency collections are not implemented yet";
+        }
+        message.bits.writeBit(Boolean(currencyCollection));
+        message.bits.writeGrams(ihrFees);
+        message.bits.writeGrams(fwdFees);
+        message.bits.writeUint(createdLt, 64);
+        message.bits.writeUint(createdAt, 32);
+        return message;
+    }
+
+    //ext_in_msg_info$10 src:MsgAddressExt dest:MsgAddressInt
+    //import_fee:Grams = CommonMsgInfo;
+    /**
+     * @param dest  {Address | string}
+     * @param src  {Address | string}
+     * @param importFee  {number | BN}
+     * @return {Cell}
+     */
+    static createExternalMessageHeader(dest,
+                                       src = null,
+                                       importFee = 0) {
+        const message = new Cell();
+        message.bits.writeUint(2, 2);
+        message.bits.writeAddress(src ? new Address(src) : null);
+        message.bits.writeAddress(new Address(dest));   // TODO, MsgAddressInt
+        message.bits.writeGrams(importFee);
+        return message;
+    }
+
+    //tblkch.pdf, page 57
+    /*
+    message$_ {X:Type} info:CommonMsgInfo
+      init:(Maybe (Either StateInit ^StateInit))
+      body:(Either X ^X) = Message X;
+    */
+    /**
+     * Create Message contains header, stateInit, body
+     * @param header {Cell}
+     * @param stateInit?  {Cell}
+     * @param body?  {Cell}
+     * @return {Cell}
+     */
+    static createMessage(header, stateInit = null, body = null) {
+        const commonMsgInfo = new Cell();
+        commonMsgInfo.writeCell(header);
+
+        if (stateInit) {
+            commonMsgInfo.bits.writeBit(true);
+            //-1:  need at least one bit for body
+            // TODO we also should check for free refs here
+            if (commonMsgInfo.bits.getFreeBits() - 1 >= stateInit.bits.getUsedBits()) {
+                commonMsgInfo.bits.writeBit(false);
+                commonMsgInfo.writeCell(stateInit);
+            } else {
+                commonMsgInfo.bits.writeBit(true);
+                commonMsgInfo.refs.push(stateInit);
+            }
+        } else {
+            commonMsgInfo.bits.writeBit(false);
+        }
+        // TODO we also should check for free refs here
+        if (body) {
+            if (commonMsgInfo.bits.getFreeBits() >= body.bits.getUsedBits()) {
+                commonMsgInfo.bits.writeBit(false);
+                commonMsgInfo.writeCell(body);
+            } else {
+                commonMsgInfo.bits.writeBit(true);
+                commonMsgInfo.refs.push(body);
+            }
+        } else {
+            commonMsgInfo.bits.writeBit(false);
+        }
+        return commonMsgInfo;
+    }
+
+    static arrayFromCONS(cons) {
+        let result = [];
+        let item = cons;
+
+        while (item) {
+            if (!item.length === 2) {
+                return result;
+            }
+
+            result.push(item[0]);
+            item = item[1];
+        }
+
+        return result;
+    }
+}
+
+
+module.exports = {ClassicContract};</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbiContract.html">AbiContract</a></li><li><a href="Address.html">Address</a></li><li><a href="BitString.html">BitString</a></li><li><a href="Block.html">Block</a></li><li><a href="BlockId.html">BlockId</a></li><li><a href="BlockParser.html">BlockParser</a></li><li><a href="BrowserStorage.html">BrowserStorage</a></li><li><a href="Cell.html">Cell</a></li><li><a href="ClassicContract.html">ClassicContract</a></li><li><a href="Contract.html">Contract</a></li><li><a href="Hashmap.html">Hashmap</a></li><li><a href="HashmapAug.html">HashmapAug</a></li><li><a href="HashmapAugE.html">HashmapAugE</a></li><li><a href="HashmapE.html">HashmapE</a></li><li><a href="LiteClient.html">LiteClient</a></li><li><a href="Storage.html">Storage</a></li></ul><h3>Global</h3><ul><li><a href="global.html#base64ToBytes">base64ToBytes</a></li><li><a href="global.html#base64toString">base64toString</a></li><li><a href="global.html#bytesToBase64">bytesToBase64</a></li><li><a href="global.html#bytesToBinString">bytesToBinString</a></li><li><a href="global.html#bytesToHex">bytesToHex</a></li><li><a href="global.html#bytesToString">bytesToString</a></li><li><a href="global.html#compareBytes">compareBytes</a></li><li><a href="global.html#concatBytes">concatBytes</a></li><li><a href="global.html#crc16">crc16</a></li><li><a href="global.html#crc32c">crc32c</a></li><li><a href="global.html#estimateFee">estimateFee</a></li><li><a href="global.html#fromNano">fromNano</a></li><li><a href="global.html#getAddress">getAddress</a></li><li><a href="global.html#getMessage">getMessage</a></li><li><a href="global.html#hexToBytes">hexToBytes</a></li><li><a href="global.html#loadAccount">loadAccount</a></li><li><a href="global.html#loadAccountBlock">loadAccountBlock</a></li><li><a href="global.html#loadAccountState">loadAccountState</a></li><li><a href="global.html#loadAccountStatus">loadAccountStatus</a></li><li><a href="global.html#loadAccountStorage">loadAccountStorage</a></li><li><a href="global.html#loadAccStatusChange">loadAccStatusChange</a></li><li><a href="global.html#loadAny">loadAny</a></li><li><a href="global.html#loadAnycast">loadAnycast</a></li><li><a href="global.html#loadBinTree">loadBinTree</a></li><li><a href="global.html#loadBit">loadBit</a></li><li><a href="global.html#loadBits">loadBits</a></li><li><a href="global.html#loadBlkMasterInfo">loadBlkMasterInfo</a></li><li><a href="global.html#loadBlkPrevInfo">loadBlkPrevInfo</a></li><li><a href="global.html#loadBlock">loadBlock</a></li><li><a href="global.html#loadBlockCreateFees">loadBlockCreateFees</a></li><li><a href="global.html#loadBlockCreateStats">loadBlockCreateStats</a></li><li><a href="global.html#loadBlockExtra">loadBlockExtra</a></li><li><a href="global.html#loadBlockIdExt">loadBlockIdExt</a></li><li><a href="global.html#loadBlockInfo">loadBlockInfo</a></li><li><a href="global.html#loadBlockLimits">loadBlockLimits</a></li><li><a href="global.html#loadBool">loadBool</a></li><li><a href="global.html#loadCatchainConfig">loadCatchainConfig</a></li><li><a href="global.html#loadCommonMsgInfo">loadCommonMsgInfo</a></li><li><a href="global.html#loadComplaintPricing">loadComplaintPricing</a></li><li><a href="global.html#loadComputeSkipReason">loadComputeSkipReason</a></li><li><a href="global.html#loadConfigParam">loadConfigParam</a></li><li><a href="global.html#loadConfigParam0">loadConfigParam0</a></li><li><a href="global.html#loadConfigParam1">loadConfigParam1</a></li><li><a href="global.html#loadConfigParam2">loadConfigParam2</a></li><li><a href="global.html#loadConfigParam3">loadConfigParam3</a></li><li><a href="global.html#loadConfigParam4">loadConfigParam4</a></li><li><a href="global.html#loadConfigParam6">loadConfigParam6</a></li><li><a href="global.html#loadConfigParam7">loadConfigParam7</a></li><li><a href="global.html#loadConfigParam8">loadConfigParam8</a></li><li><a href="global.html#loadConfigParam9">loadConfigParam9</a></li><li><a href="global.html#loadConfigParam10">loadConfigParam10</a></li><li><a href="global.html#loadConfigParam11">loadConfigParam11</a></li><li><a href="global.html#loadConfigParam12">loadConfigParam12</a></li><li><a href="global.html#loadConfigParam13">loadConfigParam13</a></li><li><a href="global.html#loadConfigParam14">loadConfigParam14</a></li><li><a href="global.html#loadConfigParam15">loadConfigParam15</a></li><li><a href="global.html#loadConfigParam16">loadConfigParam16</a></li><li><a href="global.html#loadConfigParam17">loadConfigParam17</a></li><li><a href="global.html#loadConfigParam18">loadConfigParam18</a></li><li><a href="global.html#loadConfigParam20">loadConfigParam20</a></li><li><a href="global.html#loadConfigParam21">loadConfigParam21</a></li><li><a href="global.html#loadConfigParam22">loadConfigParam22</a></li><li><a href="global.html#loadConfigParam23">loadConfigParam23</a></li><li><a href="global.html#loadConfigParam24">loadConfigParam24</a></li><li><a href="global.html#loadConfigParam25">loadConfigParam25</a></li><li><a href="global.html#loadConfigParam28">loadConfigParam28</a></li><li><a href="global.html#loadConfigParam29">loadConfigParam29</a></li><li><a href="global.html#loadConfigParam31">loadConfigParam31</a></li><li><a href="global.html#loadConfigParam32">loadConfigParam32</a></li><li><a href="global.html#loadConfigParam33">loadConfigParam33</a></li><li><a href="global.html#loadConfigParam34">loadConfigParam34</a></li><li><a href="global.html#loadConfigParam35">loadConfigParam35</a></li><li><a href="global.html#loadConfigParam36">loadConfigParam36</a></li><li><a href="global.html#loadConfigParam37">loadConfigParam37</a></li><li><a href="global.html#loadConfigParams">loadConfigParams</a></li><li><a href="global.html#loadConfigProposalSetup">loadConfigProposalSetup</a></li><li><a href="global.html#loadConfigVotingSetup">loadConfigVotingSetup</a></li><li><a href="global.html#loadConsensusConfig">loadConsensusConfig</a></li><li><a href="global.html#loadCounters">loadCounters</a></li><li><a href="global.html#loadCreatorStats">loadCreatorStats</a></li><li><a href="global.html#loadCryptoSignature">loadCryptoSignature</a></li><li><a href="global.html#loadCryptoSignaturePair">loadCryptoSignaturePair</a></li><li><a href="global.html#loadCurrencyCollection">loadCurrencyCollection</a></li><li><a href="global.html#loadDepthBalanceInfo">loadDepthBalanceInfo</a></li><li><a href="global.html#loadEither">loadEither</a></li><li><a href="global.html#loadExtBlkRef">loadExtBlkRef</a></li><li><a href="global.html#loadExtraCurrencyCollection">loadExtraCurrencyCollection</a></li><li><a href="global.html#loadFutureSplitMerge">loadFutureSplitMerge</a></li><li><a href="global.html#loadGasLimitsPrices">loadGasLimitsPrices</a></li><li><a href="global.html#loadGlobalVersion">loadGlobalVersion</a></li><li><a href="global.html#loadGrams">loadGrams</a></li><li><a href="global.html#loadHASH_UPDATE">loadHASH_UPDATE</a></li><li><a href="global.html#loadHashmap">loadHashmap</a></li><li><a href="global.html#loadHashmapAug">loadHashmapAug</a></li><li><a href="global.html#loadHashmapAugE">loadHashmapAugE</a></li><li><a href="global.html#loadHashmapE">loadHashmapE</a></li><li><a href="global.html#loadInt8">loadInt8</a></li><li><a href="global.html#loadInt16">loadInt16</a></li><li><a href="global.html#loadInt32">loadInt32</a></li><li><a href="global.html#loadKeyExtBlkRef">loadKeyExtBlkRef</a></li><li><a href="global.html#loadKeyMaxLt">loadKeyMaxLt</a></li><li><a href="global.html#loadMaybe">loadMaybe</a></li><li><a href="global.html#loadMaybeRef">loadMaybeRef</a></li><li><a href="global.html#loadMcBlockExtra">loadMcBlockExtra</a></li><li><a href="global.html#loadMcStateExtra">loadMcStateExtra</a></li><li><a href="global.html#loadMERKLE_UPDATE">loadMERKLE_UPDATE</a></li><li><a href="global.html#loadMessage">loadMessage</a></li><li><a href="global.html#loadMsgAddressExt">loadMsgAddressExt</a></li><li><a href="global.html#loadMsgAddressInt">loadMsgAddressInt</a></li><li><a href="global.html#loadMsgForwardPrices">loadMsgForwardPrices</a></li><li><a href="global.html#loadOldMcBlocksInfo">loadOldMcBlocksInfo</a></li><li><a href="global.html#loadParamLimits">loadParamLimits</a></li><li><a href="global.html#loadRefIfExist">loadRefIfExist</a></li><li><a href="global.html#loadShardAccount">loadShardAccount</a></li><li><a href="global.html#loadShardAccountBlocks">loadShardAccountBlocks</a></li><li><a href="global.html#loadShardAccounts">loadShardAccounts</a></li><li><a href="global.html#loadShardDescr">loadShardDescr</a></li><li><a href="global.html#loadShardFeeCreated">loadShardFeeCreated</a></li><li><a href="global.html#loadShardFees">loadShardFees</a></li><li><a href="global.html#loadShardHashes">loadShardHashes</a></li><li><a href="global.html#loadShardIdent">loadShardIdent</a></li><li><a href="global.html#loadShardStateUnsplit">loadShardStateUnsplit</a></li><li><a href="global.html#loadSigPubKey">loadSigPubKey</a></li><li><a href="global.html#loadStateInit">loadStateInit</a></li><li><a href="global.html#loadStorageInfo">loadStorageInfo</a></li><li><a href="global.html#loadStoragePrices">loadStoragePrices</a></li><li><a href="global.html#loadStorageUsed">loadStorageUsed</a></li><li><a href="global.html#loadStorageUsedShort">loadStorageUsedShort</a></li><li><a href="global.html#loadTickTock">loadTickTock</a></li><li><a href="global.html#loadTrActionPhase">loadTrActionPhase</a></li><li><a href="global.html#loadTransaction">loadTransaction</a></li><li><a href="global.html#loadTransactionDescr">loadTransactionDescr</a></li><li><a href="global.html#loadTrBouncePhase">loadTrBouncePhase</a></li><li><a href="global.html#loadTrComputePhase">loadTrComputePhase</a></li><li><a href="global.html#loadTrCreditPhase">loadTrCreditPhase</a></li><li><a href="global.html#loadTrStoragePhase">loadTrStoragePhase</a></li><li><a href="global.html#loadUint">loadUint</a></li><li><a href="global.html#loadUint8">loadUint8</a></li><li><a href="global.html#loadUint16">loadUint16</a></li><li><a href="global.html#loadUint32">loadUint32</a></li><li><a href="global.html#loadUint64">loadUint64</a></li><li><a href="global.html#loadUintLeq">loadUintLeq</a></li><li><a href="global.html#loadUintLess">loadUintLess</a></li><li><a href="global.html#loadValidatorDescr">loadValidatorDescr</a></li><li><a href="global.html#loadValidatorInfo">loadValidatorInfo</a></li><li><a href="global.html#loadValidatorSet">loadValidatorSet</a></li><li><a href="global.html#loadValueFlow">loadValueFlow</a></li><li><a href="global.html#loadVarUInteger">loadVarUInteger</a></li><li><a href="global.html#loadWorkchainDescr">loadWorkchainDescr</a></li><li><a href="global.html#loadWorkchainFormat1">loadWorkchainFormat1</a></li><li><a href="global.html#readNBytesUIntFromArray">readNBytesUIntFromArray</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runLocal">runLocal</a></li><li><a href="global.html#sha256">sha256</a></li><li><a href="global.html#sha512">sha512</a></li><li><a href="global.html#stringToArray">stringToArray</a></li><li><a href="global.html#stringToBase64">stringToBase64</a></li><li><a href="global.html#stringToBytes">stringToBytes</a></li><li><a href="global.html#toNano">toNano</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.5</a> on Tue Sep 01 2020 21:46:49 GMT+0300 (Moscow Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

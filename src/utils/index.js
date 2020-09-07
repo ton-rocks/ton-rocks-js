@@ -9,8 +9,44 @@ if (typeof window === 'undefined') {
 }
 
 /**
- * @param bytes {Uint8Array}
- * @return  {Promise<ArrayBuffer>}
+ * Converts bytes to binary string
+ * 
+ * @param {Uint8Array} bytes 
+ * @returns {string}
+ */
+const bytesToBinString = (bytes) => bytes.reduce((str, byte) => str + byte.toString(2).padStart(8, '0'), '');
+
+/**
+ * Converts string to Uint8Array
+ * 
+ * @param {string} str 
+ * @returns {Uint8Array}
+ */
+function stringToArray(str) {
+    let buf = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+        buf[i] = str.charCodeAt(i);
+    }
+    return buf;
+}
+
+/**
+ * Converts bytes to string
+ * 
+ * @param {Uint8Array} b 
+ * @returns {string}
+ */
+function bytesToString(b) {
+    // convert bytes to string
+    // encoding can be specfied, defaults to utf-8 which is ascii.
+    return new TextDecoder().decode(b); 
+}
+
+/**
+ * Calculates SHA256 hashsum
+ * 
+ * @param {Uint8Array} bytes
+ * @returns {Promise<ArrayBuffer>}
  */
 function sha256(bytes) {
     if (typeof window === 'undefined') {
@@ -21,18 +57,34 @@ function sha256(bytes) {
 }
 
 /**
- * from grams to nanograms
- * @param amount {number | BN | string}
- * @return {BN}
+ * Calculates SHA512 hashsum
+ * 
+ * @param {Uint8Array} bytes
+ * @returns {Promise<ArrayBuffer>}
+ */
+function sha512(bytes) {
+    if (typeof window === 'undefined') {
+        return nodeCrypto.createHash('sha512').update(bytes).digest();
+    } else {
+        return crypto.subtle.digest("SHA-512", bytes);
+    }
+}
+
+/**
+ * From grams to nanograms
+ * 
+ * @param {number | BN | string} amount
+ * @returns {BN}
  */
 function toNano(amount) {
     return ethunit.toWei(amount, 'gwei');
 }
 
 /**
- * from nanograms to grams
- * @param amount  {number | BN | string}
- * @return {string}
+ * From nanograms to grams
+ * 
+ * @param {number | BN | string} amount
+ * @returns {string}
  */
 function fromNano(amount) {
     return ethunit.fromWei(amount, 'gwei');
@@ -52,8 +104,10 @@ for (let ord = 0; ord <= 0xff; ord++) {
 
 //  converter using lookups
 /**
- * @param buffer  {Uint8Array}
- * @return {string}
+ * Converts bytes to hex string
+ * 
+ * @param {Uint8Array} buffer
+ * @returns {string}
  */
 function bytesToHex(buffer) {
     const hex_array = [];
@@ -66,14 +120,16 @@ function bytesToHex(buffer) {
 
 // reverse conversion using lookups
 /**
- * @param s {string}
- * @return {Uint8Array}
+ * Converts hex string to bytes
+ * 
+ * @param {string} s
+ * @returns {Uint8Array}
  */
 function hexToBytes(s) {
     s = s.toLowerCase();
     const length2 = s.length;
     if (length2 % 2 !== 0) {
-        throw "hex string must have length a multiple of 2";
+        throw Error("hex string must have length a multiple of 2");
     }
     const length = length2 / 2;
     const result = new Uint8Array(length);
@@ -86,9 +142,11 @@ function hexToBytes(s) {
 }
 
 /**
- * @param str {string}
- * @param size  {number}
- * @return {Uint8Array}
+ * Converts string to bytes with `size` dimention
+ * 
+ * @param {string} str
+ * @param {number} size
+ * @returns {Uint8Array}
  */
 function stringToBytes(str, size = 1) {
     let buf;
@@ -114,9 +172,9 @@ function stringToBytes(str, size = 1) {
 
 /**
  * @private
- * @param crc {number}
- * @param bytes {Uint8Array}
- * @return {number}
+ * @param {number} crc
+ * @param {Uint8Array} bytes
+ * @returns {number}
  */
 function _crc32c(crc, bytes) {
     const POLY = 0x82f63b78;
@@ -137,8 +195,10 @@ function _crc32c(crc, bytes) {
 }
 
 /**
- * @param bytes {Uint8Array}
- * @return {Uint8Array}
+ * Calculates crc32 checksum
+ * 
+ * @param {Uint8Array} bytes
+ * @returns {Uint8Array}
  */
 function crc32c(bytes) {
     //Version suitable for crc32-c of BOC
@@ -150,8 +210,10 @@ function crc32c(bytes) {
 }
 
 /**
- * @param data  {ArrayLike<number>}
- * @return {Uint8Array}
+ * Calculates crc16 checksum
+ * 
+ * @param {ArrayLike<number>} data
+ * @returns {Uint8Array}
  */
 function crc16(data) {
     const poly = 0x1021;
@@ -176,9 +238,11 @@ function crc16(data) {
 }
 
 /**
- * @param a {Uint8Array}
- * @param b {Uint8Array}
- * @return {Uint8Array}
+ * Concat bytes
+ * 
+ * @param {Uint8Array} a
+ * @param {Uint8Array} b
+ * @returns {Uint8Array}
  */
 function concatBytes(a, b) {
     const c = new Uint8Array(a.length + b.length);
@@ -188,9 +252,11 @@ function concatBytes(a, b) {
 }
 
 /**
- * @param a {Uint8Array}
- * @param b {Uint8Array}
- * @return {boolean}
+ * Compare bytes
+ * 
+ * @param {Uint8Array} a
+ * @param {Uint8Array} b
+ * @returns {boolean}
  */
 function compareBytes(a, b) {
     // TODO Make it smarter
@@ -217,8 +283,10 @@ const base64abc = (() => {
 })();
 
 /**
- * @param bytes {Uint8Array}
- * @return {string}
+ * Converts bytes to base64 string
+ * 
+ * @param {Uint8Array} bytes
+ * @returns {string}
  */
 function bytesToBase64(bytes) {
     let result = "";
@@ -246,14 +314,26 @@ function bytesToBase64(bytes) {
     return result;
 }
 
+/**
+ * Converts base64 string to binary string
+ * 
+ * @param {string} base64
+ * @returns {string}
+ */
 function base64toString(base64) {
     if (typeof window === 'undefined') {
-        return new Buffer(base64, 'base64').toString('binary');
+        return Buffer.from(base64, 'base64').toString('binary');
     } else {
         return atob(base64);
     }
 }
 
+/**
+ * Converts string to base64
+ * 
+ * @param {string} s
+ * @returns {string}
+ */
 function stringToBase64(s) {
     if (typeof window === 'undefined') {
         return Buffer.from(s, "binary").toString('base64')
@@ -263,8 +343,10 @@ function stringToBase64(s) {
 }
 
 /**
- * @param base64  {string}
- * @return {Uint8Array}
+ * Converts base64 string to bytes
+ * 
+ * @param {string} base64
+ * @returns {Uint8Array}
  */
 function base64ToBytes(base64) {
     const binary_string = base64toString(base64);
@@ -277,9 +359,11 @@ function base64ToBytes(base64) {
 }
 
 /**
- * @param n  {number}
- * @param ui8array  {Uint8Array}
- * @return {number}
+ * Reads n-th byte uint from array
+ * 
+ * @param {number} n Byte length of uint
+ * @param {Uint8Array} ui8array Array to read from
+ * @returns {number}
  */
 function readNBytesUIntFromArray(n, ui8array) {
     let res = 0;
@@ -295,6 +379,7 @@ module.exports = {
     nacl,
     bip39,
     sha256,
+    sha512,
     fromNano,
     toNano,
     bytesToHex,
@@ -308,5 +393,8 @@ module.exports = {
     base64toString,
     stringToBase64,
     compareBytes,
-    readNBytesUIntFromArray
+    readNBytesUIntFromArray,
+    bytesToBinString,
+    bytesToString,
+    stringToArray
 };

@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: contract/AbiContract.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: contract/AbiContract.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const {bytesToBase64, base64ToBytes, bytesToHex, hexToBytes, nacl} = require('../utils');
+const {Address, Cell} = require('../types');
+const {BlockParser} = require('../blockchain/BlockParser');
+const {Contract} = require('./Contract');
+
+/**
+ * ABI abstract contract class
+ */
+class AbiContract extends Contract {
+  /**
+   * @param {{abiPackage: Object, keys:(Object|undefined), signCallback:(Function|undefined), address:(Address|string|undefined)}} params 
+   * @param {Object} provider 
+   * @param {Object} storage 
+   * @param {Object} client 
+   * @param {Object} config
+   */
+  constructor(params, provider, storage, client, config) {
+    super(provider, storage, client, config);
+
+    if (!this.client) throw Error('no tvm');
+    if (!params.abiPackage) throw Error('no abi package');
+    if (params.abiPackage['ABI version'] &lt; 2) throw Error('too old abi');
+    if (!params.keys &amp;&amp; !params.address) throw Error('specify keys or address');
+
+    this.abiPackage = params.abiPackage;
+    
+    this.keys = params.keys;
+    this.address = params.address ? new Address(params.address) : undefined;
+    this.signCallback = params.signCallback;
+
+    /**
+     * Creates deploy object
+     * 
+     * @param {{wc:(Object|undefined), header:(Object|undefined), input:(Object|undefined), init:(Object|undefined)}} params 
+     * @returns {Promise&lt;{getMessage:Function, getAddress:Function, estimateFee:Function, runLocal:Function, run:Function}>}
+     */
+    this.deploy = async (params = {}) => {
+      if (!this.keys.publicKey) throw Error('no public key');
+      let functionBlock;
+      for (let m in this.abiPackage.abi.functions) {
+        if (this.abiPackage.abi.functions[m].name === 'constructor') {
+          functionBlock = this.abiPackage.abi.functions[m];
+          break;
+        }
+      }
+
+      if (!this.address) {
+        const address = await this._getAddress({
+          abi: this.abiPackage.abi,
+          imageBase64: this.abiPackage.imageBase64,
+          header: params.header || {},
+          input: params.input || {},
+          init: params.init || {},
+          publicKey: this.keys.publicKey,
+          workchainId: params.wc
+        });
+        this.address = new Address(address);
+      }
+
+      let getDeployMessage = async () => {
+        return await this.getDeployMessage({
+          abi: this.abiPackage.abi,
+          imageBase64: this.abiPackage.imageBase64,
+          header: params.header || {},
+          input: params.input || {},
+          init: params.init || {},
+          keyPair: this.keys,
+          signCallback: this.signCallback,
+          workchainId: params.wc,
+          address: this.address
+        });
+      };
+
+      return {
+        /**
+         * Gets message to send
+         * 
+         * @returns {Promise&lt;MessageInfo>}
+         */
+        getMessage: async () => {
+          return await getDeployMessage();
+        },
+        /**
+         * Gets contract address
+         * 
+         * @returns {Address}
+         */
+        getAddress: () => {
+          return this.address;
+        },
+        /**
+         * Estimates deploy fees
+         * 
+         * @returns {Promise&lt;Fees>}
+         */
+        estimateFee: async () => {
+          let msg = await getDeployMessage();
+          return await this._estimateFee({
+            messageBodyBase64: msg.messageBodyBase64,
+            address: this.address,
+            emulateBalance: true
+          });
+        },
+        /**
+         * Emulates deploy run
+         * 
+         * @returns {{account:Account, output:Object, fee:Fees}}
+         */
+        runLocal: async () => {
+          let msg = await getDeployMessage();
+          return await this._runMessageLocal({
+            emulateBalance: true,
+            address: this.address,
+            abi: this.abiPackage.abi,
+            functionName: 'constructor',
+            messageBodyBase64: msg.messageBodyBase64,
+            fullRun: true
+          });
+        },
+        /**
+         * Runs deploy
+         * 
+         * @param {{tryNum: number, totalTimeout: number}} p
+         * @returns {Promise&lt;{ok:boolean, sended:boolean, confirmed:boolean}>} ok - is message was successfully transacted, sended - is message was sended to network, confirmed - is message status was confirmed
+         */
+        run: async (p = {}) => {
+          let res;
+          let tryNum = p.tryNum || 3;
+          for (let t = 0; t &lt; tryNum; t++) {
+            let msg = await getDeployMessage();
+            res = await this._runMessage(msg, 'uninit', p.totalTimeout, this._checkAbiMessage);
+            //console.log('run try', t, ': ', res);
+            if (res.ok) {
+              if (functionBlock &amp;&amp; functionBlock.inputs &amp;&amp; functionBlock.inputs.length > 0) {
+                let inp = await this.decodeTransactionInput({
+                  transaction: res.transaction,
+                  abi: this.abiPackage.abi,
+                  functionName: 'constructor'
+                });
+                res.input = inp ? inp.output : undefined;
+              }
+              if (functionBlock &amp;&amp; functionBlock.outputs &amp;&amp; functionBlock.outputs.length > 0) {
+                let out = await this.decodeTransactionOutput({
+                  transaction: res.transaction,
+                  abi: this.abiPackage.abi,
+                  functionName: 'constructor'
+                });
+                res.output = out ? out.output : undefined;
+              }
+              return res;
+            }
+            if (!res.sended)
+              continue;
+            if (!res.confirmed)
+              return res;
+          }
+          return res;
+        },
+      }
+    }
+
+    this.methos = {};
+    for (let m in this.abiPackage.abi.functions) {
+      let functionBlock = this.abiPackage.abi.functions[m];
+      let functionName = functionBlock.name;
+
+      /**
+       * Creates method object
+       * 
+       * @param {{input: Object, header: Object}} params
+       * @returns {Promise&lt;{getMessage:Function, getAddress:Function, estimateFee:Function, runLocal:Function, run:Function}>}
+      */
+      this.methods[functionName] = (params = {}) => {
+        
+        let getMessage = async () => {
+          return await this.getMessage({
+            address: this.address,
+            abi: this.abiPackage.abi,
+            functionName: functionName,
+            header: params.header || {},
+            input: params.input || {},
+            keyPair: this.keys,
+            signCallback: this.signCallback
+          });
+        };
+
+        return {
+          /**
+           * Gets message to send
+           * 
+           * @returns {Promise&lt;MessageInfo>}
+           */
+          getMessage: getMessage,
+          /**
+           * Estimates run fees
+           * 
+           * @param {{account: Account, emulateBalance: boolean}} p
+           * @returns {Promise&lt;Fees>}
+           */
+          estimateFee: async (p = {}) => {
+            let account;
+            if (!p.account) {
+              account = await this._getAccount();
+              if (!account.ok) throw Error('Cannot get account state');
+              account = await this._convertAccount(account);
+            } else {
+              account = p.account;
+            }
+            let msg = await getMessage();
+            return await this._estimateFee({
+              messageBodyBase64: msg.messageBodyBase64,
+              address: this.address,
+              account,
+              emulateBalance: p.emulateBalance || false
+            });
+          },
+          /**
+           * Emulates local run
+           * 
+           * @param {{account: Account, fullRun: boolean, emulateBalance: boolean}} p
+           * @returns {{account:Account, output:Object, fee:Fees}}
+           */
+          runLocal: async (p = {}) => {
+            let account;
+            if (!p.account) {
+              account = await this._getAccount();
+              if (!account.ok) throw Error('Cannot get account state: ' + account.reason);
+              account = await this._convertAccount(account);
+            } else {
+              account = p.account;
+            }
+            let msg = await getMessage();
+            return await this._runMessageLocal({
+              emulateBalance: p.emulateBalance || false,
+              address: this.address,
+              abi: this.abiPackage.abi,
+              account,
+              functionName,
+              messageBodyBase64: msg.messageBodyBase64,
+              fullRun: p.fullRun || false
+            });
+          },
+          /**
+           * Runs method
+           * 
+           * @param {{tryNum: number, totalTimeout: number}} p
+           * @returns {Promise&lt;{ok:boolean, sended:boolean, confirmed:boolean}>} ok - is message was successfully transacted, sended - is message was sended to network, confirmed - is message status was confirmed
+           */
+          run: async (p = {}) => {
+            let res;
+            let tryNum = p.tryNum || 3;
+
+            for (let t = 0; t &lt; tryNum; t++) {
+              let msg = await getMessage();
+              res = await this._runMessage(msg, 'active', p.totalTimeout, this._checkAbiMessage);
+              //console.log('run try', t, ': ', res);
+
+              if (res.ok) {
+                if (functionBlock.inputs &amp;&amp; functionBlock.inputs.length > 0) {
+                  let inp = await this.decodeTransactionInput({
+                    transaction: res.transaction,
+                    abi: this.abiPackage.abi,
+                    functionName
+                  });
+                  res.input = inp ? inp.output : undefined;
+                }
+                if (functionBlock.outputs &amp;&amp; functionBlock.outputs.length > 0) {
+                  let out = await this.decodeTransactionOutput({
+                    transaction: res.transaction,
+                    abi: this.abiPackage.abi,
+                    functionName
+                  });
+                  res.output = out ? out.output : undefined;
+                }
+                return res;
+              }
+
+              if (!res.sended)
+                continue;
+
+              if (!res.confirmed)
+                return res;
+            }
+            return res;
+          },
+        }
+      }
+    }
+  }
+
+  /**
+   * @private
+   * @param {{secretKey:Uint8Array, publicKey:Uint8Array}} keys 
+   */
+  _getKeys(keys) {
+    return keys ? {
+        secret: keys.secretKey ? bytesToHex(keys.secretKey.subarray(0, 32)) : undefined,
+        public: keys.publicKey ? bytesToHex(keys.publicKey) : undefined
+    } : undefined;
+  }
+
+  /**
+   * @private
+   * @param {Object} params 
+   */
+  async _getAddress(params) {
+    if (!params.publicKey) throw Error('no public key');
+
+    // only public key is required
+    let publicKey = bytesToHex(params.publicKey);
+
+    const messageUnsigned = await this.client.requestCore('contracts.deploy.encode_unsigned_message', {
+      abi: params.abi,
+      imageBase64: params.imageBase64,
+      constructorHeader: params.header,
+      constructorParams: params.input,
+      initParams: params.init,
+      publicKeyHex: publicKey,
+      workchainId: params.workchainId
+    });
+
+    return messageUnsigned.addressHex;
+  } 
+
+  /**
+   * Check message for ABI contracts
+   * 
+   * @private
+   * @param {Message} message 
+   * @param {BlockObject} inMsg 
+   */
+  _checkAbiMessage(message, inMsg) {
+    if (inMsg._ !== 'Message')
+      return false;
+
+    if (!message.signed) {
+      return message.hash === bytesToHex(inMsg.hash);
+    }
+
+    if(!inMsg.body)
+      return false;
+
+    let signature = BlockParser.parseSignature(inMsg.body);
+    return message.sign === bytesToHex(signature);
+  }
+
+  async getDeployMessage(params) {
+    if (!params.abi) throw Error('no abi');
+    if (params.abi['ABI version'] &lt; 2) throw Error('too old abi');
+
+    if (params.abi.header.includes("pubkey") &amp;&amp;
+        params.keyPair !== undefined &amp;&amp;
+        params.keyPair.publicKey !== undefined) {
+      params.header.pubkey = bytesToHex(params.keyPair.publicKey);
+    }
+    if (params.abi.header.includes("time")) {
+      params.header.time = params.header.time || Date.now();
+    }
+
+    const signExist = !!params.signCallback || (params.keyPair &amp;&amp; params.keyPair.secretKey);
+    const externalSign = !!params.signCallback &amp;&amp; (!params.keyPair || !params.keyPair.secretKey);
+    const expiration = externalSign ? this.config.expireExtDefault : this.config.expireDefault;
+
+    if (params.abi.header.includes("expire")) {
+      params.header.expire = params.header.expire || Math.floor((Date.now() + expiration) / 1000);
+    }
+
+    if (signExist) {
+      const messageUnsigned = await this.client.requestCore('contracts.deploy.encode_unsigned_message', {
+        abi: params.abi,
+        imageBase64: params.imageBase64,
+        constructorHeader: params.header,
+        constructorParams: params.input,
+        initParams: params.init,
+        publicKeyHex: bytesToHex(params.keyPair.publicKey),
+        workchainId: params.workchainId
+      });
+
+      if (messageUnsigned.addressHex !== params.address.toString(false))
+        throw Error('invalid deploy message');
+
+      const bytesToSign = base64ToBytes(messageUnsigned.encoded.bytesToSignBase64);
+      
+      let sign;
+      if (externalSign) {
+        sign = params.signCallback('constructor', bytesToSign, params.address, params.keyPair, params.header);
+      }
+      else {
+        sign = nacl.sign.detached(bytesToSign, params.keyPair.secretKey);
+      }
+      let signBase64 = bytesToBase64(sign);
+
+      const messageSigned = await this.client.requestCore('contracts.encode_message_with_sign', {
+        abi: params.abi,
+        unsignedBytesBase64: messageUnsigned.encoded.unsignedBytesBase64,
+        signBytesBase64: signBase64
+      });
+
+      return {
+        messageBodyBase64: messageSigned.messageBodyBase64,
+        expire: params.header.expire,
+        signed: true,
+        sign: bytesToHex(sign)
+      };
+
+    }
+    else {
+      throw Error("TODO make deploy without keys");
+      /*
+      let keyPair = this._getKeys(params.keyPair);
+      const message = await this.client.requestCore('contracts.deploy.message', {
+        abi: params.abi,
+        imageBase64: params.imageBase64,
+        constructorHeader: params.header,
+        constructorParams: params.input,
+        initParams: params.init,
+        keyPair: keyPair,
+        workchainId: params.workchainId
+      });
+      return  {
+        messageBodyBase64: message.messageBodyBase64,
+        expire: params.header.expire,
+        signed: false,
+        hash: bytesToHex(hexToBytes(message.messageId))
+      };
+      */
+    }
+
+    //params.keyPair = this._getKeys(params.keyPair);
+    //const message = await this.client.requestCore('contracts.deploy.message', params);
+    //return message;
+  }
+
+  /**
+   * Creates ABI message
+   * 
+   * @param {Object} params
+   * @returns {Promise&lt;MessageInfo>}
+   */
+  async getMessage(params) {
+    if (!params.address) throw Error('no address');
+    if (!params.abi) throw Error('no abi');
+    if (params.abi['ABI version'] &lt; 2) throw Error('too old abi');
+
+    if (params.abi.header.includes("pubkey") &amp;&amp;
+        params.keyPair !== undefined &amp;&amp;
+        params.keyPair.publicKey !== undefined) {
+      params.header.pubkey = bytesToHex(params.keyPair.publicKey);
+    }
+    if (params.abi.header.includes("time")) {
+      params.header.time = params.header.time || Date.now();
+    }
+
+    const signExist = !!params.signCallback || (params.keyPair &amp;&amp; params.keyPair.secretKey);
+    const externalSign = !!params.signCallback &amp;&amp; (!params.keyPair || !params.keyPair.secretKey);
+    const expiration = externalSign ? this.config.expireExtDefault : this.config.expireDefault;
+
+    if (params.abi.header.includes("expire")) {
+      params.header.expire = params.header.expire || Math.floor((Date.now() + expiration) / 1000);
+    }
+
+    let ret;
+    if (signExist) {
+
+      const messageUnsigned = await this.client.requestCore('contracts.run.encode_unsigned_message', {
+        address: params.address.toString(false),
+        abi: params.abi,
+        functionName: params.functionName,
+        header: params.header,
+        input: params.input
+      });
+
+      const bytesToSign = base64ToBytes(messageUnsigned.bytesToSignBase64);
+      
+      let sign;
+      if (externalSign) {
+        sign = params.signCallback(params.functionName, bytesToSign, params.address, params.keyPair, params.header);
+      }
+      else {
+        sign = nacl.sign.detached(bytesToSign, params.keyPair.secretKey);
+      }
+      let signBase64 = bytesToBase64(sign);
+
+      const messageSigned = await this.client.requestCore('contracts.encode_message_with_sign', {
+        abi: params.abi,
+        unsignedBytesBase64: messageUnsigned.unsignedBytesBase64,
+        signBytesBase64: signBase64
+      });
+
+      ret = {
+        messageBodyBase64: messageSigned.messageBodyBase64,
+        expire: params.header.expire,
+        signed: true,
+        sign: bytesToHex(sign)
+      }
+    }
+    else {
+      const message = await this.client.requestCore('contracts.run.message', {
+        address: params.address.toString(false),
+        abi: params.abi,
+        functionName: params.functionName,
+        header: params.header,
+        input: params.input,
+        keyPair: params.keyPair
+      });
+      ret = {
+        messageBodyBase64: message.messageBodyBase64,
+        expire: params.header.expire,
+        signed: false,
+        hash: bytesToHex(hexToBytes(message.messageId))
+      }
+    }
+
+    return ret;
+  }
+
+  /**
+   * Decodes input message
+   * 
+   * @param {Message | Cell | string} msg Message or Cell or Base64 BOC string
+   * @param {Object} abi ABI package
+   * @param {*} incomplete Is message returned by encode_unsigned_message
+   * @param {string} functionName Search for functionName
+   * @returns {Promise&lt;{message: Cell, output: Object, function: string}>}
+   */
+  async decodeInput(msg, abi, incomplete=false, functionName) {
+    if (typeof msg === 'string')
+      msg = await Cell.fromBoc(base64ToBytes(msg));
+
+    if (msg._ === 'Cell')
+      msg = BlockParser.parseMessage(msg);
+
+    if (msg._ !== 'Message') throw Error('not a Message');
+
+    const internal = msg.info.type !== 'ext_in';
+
+    let refs = msg.body.cell.refs.length - msg.body.current_ref;
+    let len = msg.body.cell.bits.cursor - msg.body.current_pos;
+
+    if (len === 0)
+      return undefined;
+    
+    const bodyCell = new Cell();
+
+    if (incomplete)
+      bodyCell.bits.writeBit(false);
+    
+    for (let k = 0; k &lt; len; k++) {
+      bodyCell.bits.writeBit(msg.body.cell.bits.get(msg.body.current_pos + k));
+    }
+    for (let k = 0; k &lt; refs; k++) {
+      bodyCell.refs.push(msg.body.cell.refs[msg.body.current_ref + k]);
+    }
+
+    const msgBoc = bytesToBase64(await bodyCell.toBoc(false, false, false));
+
+    const res = await this.client.requestCore('contracts.run.unknown.input', {
+      abi: abi,
+      bodyBase64: msgBoc,
+      internal
+    });
+
+    if (res.function !== undefined &amp;&amp; functionName !== undefined &amp;&amp; res.function !== functionName) {
+      console.warn('decodeTransactionInput invalid function:', res.function);
+      return undefined;
+    }
+
+    return {
+      message: msg,
+      output: res.output,
+      function: res.function
+    };
+  }
+
+  /**
+   * Decodes input message from transaction
+   * 
+   * @param {{transaction: Transaction, abi: Object, functionName: string}} params 
+   * @returns {Promise&lt;{message: Cell, output: Object, function: string}>}
+   */
+  async decodeTransactionInput(params) {
+    if (!params.transaction) throw Error('no transaction');
+
+    const msg = params.transaction.in_msg;
+    try {
+      let res = await this.decodeInput(msg, params.abi, false, params.functionName);
+      if (res) return res;
+    } catch (e) {
+      console.log('decodeTransactionInput error', e);
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Decodes output message
+   * 
+   * @param {Message | Cell | string} msg Message or Cell or Base64 BOC string
+   * @param {Object} abi ABI package
+   * @param {string} functionName Search for functionName
+   * @returns {Promise&lt;{message: Cell, output: Object, function: string}>}
+   */
+  async decodeOutput(msg, abi, functionName) {
+    if (typeof msg === 'string')
+      msg = await Cell.fromBoc(base64ToBytes(msg));
+
+    if (msg._ === 'Cell')
+      msg = BlockParser.parseMessage(msg);
+
+    if (msg._ !== 'Message') throw Error('not a Message');
+
+    if (msg.info.type !== 'ext_out')
+      return undefined;
+
+    let refs = msg.body.cell.refs.length - msg.body.current_ref;
+    let len = msg.body.cell.bits.cursor - msg.body.current_pos;
+
+    if (len === 0)
+      return undefined;
+    
+    const bodyCell = new Cell();
+    for (let k = 0; k &lt; len; k++) {
+      bodyCell.bits.writeBit(msg.body.cell.bits.get(msg.body.current_pos + k));
+    }
+    for (let k = 0; k &lt; refs; k++) {
+      bodyCell.refs.push(msg.body.cell.refs[msg.body.current_ref + k]);
+    }
+
+    const msgBoc = bytesToBase64(await bodyCell.toBoc(false, false, false));
+
+    const res = await this.client.requestCore('contracts.run.unknown.output', {
+      abi: abi,
+      bodyBase64: msgBoc,
+      internal: false
+    });
+
+    if (res.function !== undefined &amp;&amp; functionName !== undefined &amp;&amp; res.function !== functionName) {
+      console.warn('decodeTransactionOutput invalid function:', res.function);
+      return undefined;
+    }
+
+    return {
+      message: msg,
+      output: res.output,
+      function: res.function
+    };
+  }
+  
+  /**
+   * Decodes output message from transaction
+   * 
+   * @todo Check multiply output
+   * @param {{transaction: Transaction, abi: Object, functionName: string}} params 
+   * @returns {Promise&lt;{message: Cell, output: Object, function: string}>}
+   */
+  async decodeTransactionOutput(params) {
+    if (!params.transaction) throw Error('no transaction');
+
+    for (const entry of params.transaction.out_msgs.map.entries()) {
+      const msg = entry[1];
+      try {
+        let res = await this.decodeOutput(msg, params.abi, params.functionName);
+        if (res) return res;
+      } catch (e) {
+        console.log('decodeTransactionOutput error', e);
+      }
+    }
+
+    return undefined;
+  }
+
+}
+
+
+module.exports = {AbiContract};</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AbiContract.html">AbiContract</a></li><li><a href="Address.html">Address</a></li><li><a href="BitString.html">BitString</a></li><li><a href="Block.html">Block</a></li><li><a href="BlockId.html">BlockId</a></li><li><a href="BlockParser.html">BlockParser</a></li><li><a href="BrowserStorage.html">BrowserStorage</a></li><li><a href="Cell.html">Cell</a></li><li><a href="ClassicContract.html">ClassicContract</a></li><li><a href="Contract.html">Contract</a></li><li><a href="Hashmap.html">Hashmap</a></li><li><a href="HashmapAug.html">HashmapAug</a></li><li><a href="HashmapAugE.html">HashmapAugE</a></li><li><a href="HashmapE.html">HashmapE</a></li><li><a href="LiteClient.html">LiteClient</a></li><li><a href="Storage.html">Storage</a></li></ul><h3>Global</h3><ul><li><a href="global.html#base64ToBytes">base64ToBytes</a></li><li><a href="global.html#base64toString">base64toString</a></li><li><a href="global.html#bytesToBase64">bytesToBase64</a></li><li><a href="global.html#bytesToBinString">bytesToBinString</a></li><li><a href="global.html#bytesToHex">bytesToHex</a></li><li><a href="global.html#bytesToString">bytesToString</a></li><li><a href="global.html#compareBytes">compareBytes</a></li><li><a href="global.html#concatBytes">concatBytes</a></li><li><a href="global.html#crc16">crc16</a></li><li><a href="global.html#crc32c">crc32c</a></li><li><a href="global.html#estimateFee">estimateFee</a></li><li><a href="global.html#fromNano">fromNano</a></li><li><a href="global.html#getAddress">getAddress</a></li><li><a href="global.html#getMessage">getMessage</a></li><li><a href="global.html#hexToBytes">hexToBytes</a></li><li><a href="global.html#loadAccount">loadAccount</a></li><li><a href="global.html#loadAccountBlock">loadAccountBlock</a></li><li><a href="global.html#loadAccountState">loadAccountState</a></li><li><a href="global.html#loadAccountStatus">loadAccountStatus</a></li><li><a href="global.html#loadAccountStorage">loadAccountStorage</a></li><li><a href="global.html#loadAccStatusChange">loadAccStatusChange</a></li><li><a href="global.html#loadAny">loadAny</a></li><li><a href="global.html#loadAnycast">loadAnycast</a></li><li><a href="global.html#loadBinTree">loadBinTree</a></li><li><a href="global.html#loadBit">loadBit</a></li><li><a href="global.html#loadBits">loadBits</a></li><li><a href="global.html#loadBlkMasterInfo">loadBlkMasterInfo</a></li><li><a href="global.html#loadBlkPrevInfo">loadBlkPrevInfo</a></li><li><a href="global.html#loadBlock">loadBlock</a></li><li><a href="global.html#loadBlockCreateFees">loadBlockCreateFees</a></li><li><a href="global.html#loadBlockCreateStats">loadBlockCreateStats</a></li><li><a href="global.html#loadBlockExtra">loadBlockExtra</a></li><li><a href="global.html#loadBlockIdExt">loadBlockIdExt</a></li><li><a href="global.html#loadBlockInfo">loadBlockInfo</a></li><li><a href="global.html#loadBlockLimits">loadBlockLimits</a></li><li><a href="global.html#loadBool">loadBool</a></li><li><a href="global.html#loadCatchainConfig">loadCatchainConfig</a></li><li><a href="global.html#loadCommonMsgInfo">loadCommonMsgInfo</a></li><li><a href="global.html#loadComplaintPricing">loadComplaintPricing</a></li><li><a href="global.html#loadComputeSkipReason">loadComputeSkipReason</a></li><li><a href="global.html#loadConfigParam">loadConfigParam</a></li><li><a href="global.html#loadConfigParam0">loadConfigParam0</a></li><li><a href="global.html#loadConfigParam1">loadConfigParam1</a></li><li><a href="global.html#loadConfigParam2">loadConfigParam2</a></li><li><a href="global.html#loadConfigParam3">loadConfigParam3</a></li><li><a href="global.html#loadConfigParam4">loadConfigParam4</a></li><li><a href="global.html#loadConfigParam6">loadConfigParam6</a></li><li><a href="global.html#loadConfigParam7">loadConfigParam7</a></li><li><a href="global.html#loadConfigParam8">loadConfigParam8</a></li><li><a href="global.html#loadConfigParam9">loadConfigParam9</a></li><li><a href="global.html#loadConfigParam10">loadConfigParam10</a></li><li><a href="global.html#loadConfigParam11">loadConfigParam11</a></li><li><a href="global.html#loadConfigParam12">loadConfigParam12</a></li><li><a href="global.html#loadConfigParam13">loadConfigParam13</a></li><li><a href="global.html#loadConfigParam14">loadConfigParam14</a></li><li><a href="global.html#loadConfigParam15">loadConfigParam15</a></li><li><a href="global.html#loadConfigParam16">loadConfigParam16</a></li><li><a href="global.html#loadConfigParam17">loadConfigParam17</a></li><li><a href="global.html#loadConfigParam18">loadConfigParam18</a></li><li><a href="global.html#loadConfigParam20">loadConfigParam20</a></li><li><a href="global.html#loadConfigParam21">loadConfigParam21</a></li><li><a href="global.html#loadConfigParam22">loadConfigParam22</a></li><li><a href="global.html#loadConfigParam23">loadConfigParam23</a></li><li><a href="global.html#loadConfigParam24">loadConfigParam24</a></li><li><a href="global.html#loadConfigParam25">loadConfigParam25</a></li><li><a href="global.html#loadConfigParam28">loadConfigParam28</a></li><li><a href="global.html#loadConfigParam29">loadConfigParam29</a></li><li><a href="global.html#loadConfigParam31">loadConfigParam31</a></li><li><a href="global.html#loadConfigParam32">loadConfigParam32</a></li><li><a href="global.html#loadConfigParam33">loadConfigParam33</a></li><li><a href="global.html#loadConfigParam34">loadConfigParam34</a></li><li><a href="global.html#loadConfigParam35">loadConfigParam35</a></li><li><a href="global.html#loadConfigParam36">loadConfigParam36</a></li><li><a href="global.html#loadConfigParam37">loadConfigParam37</a></li><li><a href="global.html#loadConfigParams">loadConfigParams</a></li><li><a href="global.html#loadConfigProposalSetup">loadConfigProposalSetup</a></li><li><a href="global.html#loadConfigVotingSetup">loadConfigVotingSetup</a></li><li><a href="global.html#loadConsensusConfig">loadConsensusConfig</a></li><li><a href="global.html#loadCounters">loadCounters</a></li><li><a href="global.html#loadCreatorStats">loadCreatorStats</a></li><li><a href="global.html#loadCryptoSignature">loadCryptoSignature</a></li><li><a href="global.html#loadCryptoSignaturePair">loadCryptoSignaturePair</a></li><li><a href="global.html#loadCurrencyCollection">loadCurrencyCollection</a></li><li><a href="global.html#loadDepthBalanceInfo">loadDepthBalanceInfo</a></li><li><a href="global.html#loadEither">loadEither</a></li><li><a href="global.html#loadExtBlkRef">loadExtBlkRef</a></li><li><a href="global.html#loadExtraCurrencyCollection">loadExtraCurrencyCollection</a></li><li><a href="global.html#loadFutureSplitMerge">loadFutureSplitMerge</a></li><li><a href="global.html#loadGasLimitsPrices">loadGasLimitsPrices</a></li><li><a href="global.html#loadGlobalVersion">loadGlobalVersion</a></li><li><a href="global.html#loadGrams">loadGrams</a></li><li><a href="global.html#loadHASH_UPDATE">loadHASH_UPDATE</a></li><li><a href="global.html#loadHashmap">loadHashmap</a></li><li><a href="global.html#loadHashmapAug">loadHashmapAug</a></li><li><a href="global.html#loadHashmapAugE">loadHashmapAugE</a></li><li><a href="global.html#loadHashmapE">loadHashmapE</a></li><li><a href="global.html#loadInt8">loadInt8</a></li><li><a href="global.html#loadInt16">loadInt16</a></li><li><a href="global.html#loadInt32">loadInt32</a></li><li><a href="global.html#loadKeyExtBlkRef">loadKeyExtBlkRef</a></li><li><a href="global.html#loadKeyMaxLt">loadKeyMaxLt</a></li><li><a href="global.html#loadMaybe">loadMaybe</a></li><li><a href="global.html#loadMaybeRef">loadMaybeRef</a></li><li><a href="global.html#loadMcBlockExtra">loadMcBlockExtra</a></li><li><a href="global.html#loadMcStateExtra">loadMcStateExtra</a></li><li><a href="global.html#loadMERKLE_UPDATE">loadMERKLE_UPDATE</a></li><li><a href="global.html#loadMessage">loadMessage</a></li><li><a href="global.html#loadMsgAddressExt">loadMsgAddressExt</a></li><li><a href="global.html#loadMsgAddressInt">loadMsgAddressInt</a></li><li><a href="global.html#loadMsgForwardPrices">loadMsgForwardPrices</a></li><li><a href="global.html#loadOldMcBlocksInfo">loadOldMcBlocksInfo</a></li><li><a href="global.html#loadParamLimits">loadParamLimits</a></li><li><a href="global.html#loadRefIfExist">loadRefIfExist</a></li><li><a href="global.html#loadShardAccount">loadShardAccount</a></li><li><a href="global.html#loadShardAccountBlocks">loadShardAccountBlocks</a></li><li><a href="global.html#loadShardAccounts">loadShardAccounts</a></li><li><a href="global.html#loadShardDescr">loadShardDescr</a></li><li><a href="global.html#loadShardFeeCreated">loadShardFeeCreated</a></li><li><a href="global.html#loadShardFees">loadShardFees</a></li><li><a href="global.html#loadShardHashes">loadShardHashes</a></li><li><a href="global.html#loadShardIdent">loadShardIdent</a></li><li><a href="global.html#loadShardStateUnsplit">loadShardStateUnsplit</a></li><li><a href="global.html#loadSigPubKey">loadSigPubKey</a></li><li><a href="global.html#loadStateInit">loadStateInit</a></li><li><a href="global.html#loadStorageInfo">loadStorageInfo</a></li><li><a href="global.html#loadStoragePrices">loadStoragePrices</a></li><li><a href="global.html#loadStorageUsed">loadStorageUsed</a></li><li><a href="global.html#loadStorageUsedShort">loadStorageUsedShort</a></li><li><a href="global.html#loadTickTock">loadTickTock</a></li><li><a href="global.html#loadTrActionPhase">loadTrActionPhase</a></li><li><a href="global.html#loadTransaction">loadTransaction</a></li><li><a href="global.html#loadTransactionDescr">loadTransactionDescr</a></li><li><a href="global.html#loadTrBouncePhase">loadTrBouncePhase</a></li><li><a href="global.html#loadTrComputePhase">loadTrComputePhase</a></li><li><a href="global.html#loadTrCreditPhase">loadTrCreditPhase</a></li><li><a href="global.html#loadTrStoragePhase">loadTrStoragePhase</a></li><li><a href="global.html#loadUint">loadUint</a></li><li><a href="global.html#loadUint8">loadUint8</a></li><li><a href="global.html#loadUint16">loadUint16</a></li><li><a href="global.html#loadUint32">loadUint32</a></li><li><a href="global.html#loadUint64">loadUint64</a></li><li><a href="global.html#loadUintLeq">loadUintLeq</a></li><li><a href="global.html#loadUintLess">loadUintLess</a></li><li><a href="global.html#loadValidatorDescr">loadValidatorDescr</a></li><li><a href="global.html#loadValidatorInfo">loadValidatorInfo</a></li><li><a href="global.html#loadValidatorSet">loadValidatorSet</a></li><li><a href="global.html#loadValueFlow">loadValueFlow</a></li><li><a href="global.html#loadVarUInteger">loadVarUInteger</a></li><li><a href="global.html#loadWorkchainDescr">loadWorkchainDescr</a></li><li><a href="global.html#loadWorkchainFormat1">loadWorkchainFormat1</a></li><li><a href="global.html#readNBytesUIntFromArray">readNBytesUIntFromArray</a></li><li><a href="global.html#run">run</a></li><li><a href="global.html#runLocal">runLocal</a></li><li><a href="global.html#sha256">sha256</a></li><li><a href="global.html#sha512">sha512</a></li><li><a href="global.html#stringToArray">stringToArray</a></li><li><a href="global.html#stringToBase64">stringToBase64</a></li><li><a href="global.html#stringToBytes">stringToBytes</a></li><li><a href="global.html#toNano">toNano</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.5</a> on Tue Sep 01 2020 21:46:48 GMT+0300 (Moscow Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

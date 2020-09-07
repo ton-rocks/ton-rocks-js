@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<script src="/tonrocks.bundle.js"></script>
+<script src="/test-common.js"></script>
+<script src="/test-giver.js"></script>
+<script src="/test-blockapi.js"></script>
+<script src="/test-abi.js"></script>
+<script src="/test-classic.js"></script>
+<script>
+
+window.addEventListener('load', () => {
+(async () => {
+    await testStartup();
+    let i = 0;
+    while(true) {
+      console.log('Start batch number', i);
+      await testBlockAPI();
+      await testAbi();
+      await testClassic();
+      console.log('Finish batch number', i);
+      i++;
+    }
+})();
+});
+
+</script>
+</body>
+</html>
